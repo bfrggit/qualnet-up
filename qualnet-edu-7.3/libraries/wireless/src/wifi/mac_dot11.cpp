@@ -1046,7 +1046,6 @@ void MacDot11ProcessBeacon(
                 }
         }
     }
-//    printf("Magic line at node_%d\n", node->nodeId); // It works
 }// MacDot11ProcessBeacon
 
 
@@ -1113,7 +1112,6 @@ void MacDot11ProcessAnyFrame(
                         stationItem->data->LastFrameReceivedTime =
                                                       node->getNodeTime();
                     }
-//                    printf("Magic line at node_%d\n", node->nodeId);
                   }
 
                 if (dot11->useDvcs) {
@@ -1202,7 +1200,6 @@ void MacDot11ProcessAnyFrame(
             // Currently handling only beacons.
             MacDot11ProcessBeacon(node, dot11, msg);
             MESSAGE_Free(node, msg);
-//            printf("Magic line\n"); // It works
             break;
         }
         case DOT11_CF_END:
@@ -1257,7 +1254,6 @@ void MacDot11ProcessAnyFrame(
             break;
          }
     }
-//    printf("Magic line\n"); // It works
 }//MacDot11ProcessAnyFrame
 
 //--------------------------------------------------------------------------

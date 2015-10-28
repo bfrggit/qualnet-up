@@ -4424,7 +4424,6 @@ void MacDot11ManagementProcessFrame(
         }
 
     }
-//    printf("Magic line at node_%d\n", node->nodeId);
 
 }// MacDot11ProcessManagemantFrame
 
@@ -4922,7 +4921,6 @@ void MacDot11AssociationCompleted(
                                   " Complete join failed.\n");
     }
 
-    printf("Magic line\n");
 } // MacDot11AssociationCompleted
 //--------------------------------------------------------------------------
 /*!
@@ -5337,8 +5335,7 @@ int MacDot11ManagementJoinCompleted(
         MacDot11nResetAmsduBuffer(node, dot11, TRUE, FALSE);
         MacDot11nResetCurrentMessageVariables(dot11);
     }
-
-    printf("Magic line\n");
+    printf("Magic line at %s\n", node->hostname);
 
     return result;
 } // MacDot11ManagementJoinCompleted

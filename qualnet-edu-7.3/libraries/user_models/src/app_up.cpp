@@ -31,14 +31,14 @@ void AppUpServerInit(
 	// Send general messages
 /*	AppUpSendGeneralMessageToServer(node, TIME_ConvertToClock("0"));
 	AppUpSendGeneralMessageToClient(node, TIME_ConvertToClock("0"));
-	printf("UP server: node_%d, partitionId=%d\n",
-			node->nodeId,
+	printf("UP server: %s, partitionId=%d\n",
+			node->hostname,
 			node->partitionData->partitionId);*/
 
 
 	IO_ConvertIpAddressToString(&serverAddr, addrStr);
-	printf("UP server: Initialized at node_%d (%s)\n",
-		node->nodeId,
+	printf("UP server: Initialized at %s (%s)\n",
+		node->hostname,
 		addrStr);
 }
 
@@ -59,8 +59,8 @@ void AppUpClientInit(
 		appName,
 		nodeType);
 	if(!clientPtr) { // Failed initialization
-		fprintf(stderr, "UP client: node_%d cannot allocate "
-			"new client\n", node->nodeId);
+		fprintf(stderr, "UP client: %s cannot allocate "
+			"new client\n", node->hostname);
 		assert(false);
 	}
 	if (node->appData.appStats)
@@ -89,15 +89,15 @@ void AppUpClientInit(
 	AppUpClientAddAddressInformation(node, clientPtr);
 
 	IO_ConvertIpAddressToString(&clientAddr, addrStr);
-	printf("UP client: Initialized at node_%d (%s)\n",
-		node->nodeId,
+	printf("UP client: Initialized at %s (%s)\n",
+		node->hostname,
 		addrStr);
 
 	// Test
 /*	AppUpSendGeneralMessageToServer(node, TIME_ConvertToClock("0"));
 	AppUpSendGeneralMessageToClient(node, TIME_ConvertToClock("0"));
-	printf("UP client: node_%d, partitionId=%d\n",
-			node->nodeId,
+	printf("UP client: %s, partitionId=%d\n",
+			node->hostname,
 			node->partitionData->partitionId);*/
 
 	// Open connection
@@ -235,8 +235,8 @@ void AppLayerUpServer(Node *node, Message *msg) {
 	AppDataUpServer *serverPtr;
 
 	ctoa(node->getNodeTime(), buf);
-/*	printf("UP server: node_%d at time %s processed an event\n",
-		node->nodeId,
+/*	printf("UP server: %s at time %s processed an event\n",
+		node->hostname,
 		buf);*/
 
 	switch(msg->eventType) {
@@ -244,13 +244,13 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			TransportToAppListenResult *listenResult;
 
 			listenResult = (TransportToAppListenResult*)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP server at node_%d got listen result\n",
-				buf, node->nodeId);*/
+/*			printf("%s: UP server at %s got listen result\n",
+				buf, node->hostname);*/
 
 			if(listenResult->connectionId < 0) {
-				printf("%s: UP server at node_%d listen failed\n",
+				printf("%s: UP server at %s listen failed\n",
 					buf,
-					node->nodeId);
+					node->hostname);
 				node->appData.numAppTcpFailure ++;
 			} else {
 				char addrStr[MAX_STRING_LENGTH];
@@ -265,14 +265,14 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			TransportToAppOpenResult *openResult;
 
 			openResult = (TransportToAppOpenResult *)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP server at node_%d got open result\n",
-				buf, node->nodeId);*/
+/*			printf("%s: UP server at %s got open result\n",
+				buf, node->hostname);*/
 			assert(openResult->type == TCP_CONN_PASSIVE_OPEN);
 
 			if(openResult->connectionId < 0) {
-				printf("%s: UP server at node_%d connection failed\n",
+				printf("%s: UP server at %s connection failed\n",
 					buf,
-					node->nodeId);
+					node->hostname);
 				node->appData.numAppTcpFailure ++;
 			} else {
 				AppDataUpServer* serverPtr;
@@ -286,10 +286,10 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			TransportToAppDataSent* dataSent;
 
 			dataSent = (TransportToAppDataSent*)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP server at node_%d sent data\n",
-				buf, node->nodeId);*/
-			printf("UP server: node_%d sent data, packetSize=%d\n",
-					node->nodeId,
+/*			printf("%s: UP server at %s sent data\n",
+				buf, node->hostname);*/
+			printf("UP server: %s sent data, packetSize=%d\n",
+					node->hostname,
 					dataSent->length);
 			break;
 		case MSG_APP_FromTransDataReceived:
@@ -301,11 +301,11 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			packet = MESSAGE_ReturnPacket(msg);
 			packetSize = MESSAGE_ReturnPacketSize(msg);
 
-/*			printf("%s: UP server at node_%d received data\n",
-				buf, node->nodeId);*/
-/*			printf("UP server: node_%d received data, "
+/*			printf("%s: UP server at %s received data\n",
+				buf, node->hostname);*/
+/*			printf("UP server: %s received data, "
 					"connectionId=%d packetSize=%d\n",
-					node->nodeId,
+					node->hostname,
 					dataReceived->connectionId,
 					packetSize);*/
 
@@ -331,21 +331,21 @@ void AppLayerUpServer(Node *node, Message *msg) {
 					capSize = sizeof(AppUpMessageHeader) + 1;
 				}
 				serverPtr->itemSizeReceived += packetSize - capSize;
-				printf("UP server: node_%d received data, "
+				printf("UP server: %s received data, "
 						"itemSizeExpected=%d\n",
-						node->nodeId,
+						node->hostname,
 						serverPtr->itemSizeExpected);
 			} else if(packet[packetSize - 1] == '$') {
 				serverPtr->itemSizeReceived += packetSize - 1;
-				printf("UP server: node_%d received data, "
+				printf("UP server: %s received data, "
 						"itemSizeReceived=%d\n",
-						node->nodeId,
+						node->hostname,
 						serverPtr->itemSizeReceived);
 				node->appData.appTrafficSender->appTcpCloseConnection(
 						node,
 						serverPtr->connectionId);
-				printf("UP server: node_%d disconnecting, connectionId=%d\n",
-						node->nodeId,
+				printf("UP server: %s disconnecting, connectionId=%d\n",
+						node->hostname,
 						serverPtr->connectionId);
 				if (node->appData.appStats) {
 					if (!serverPtr->stats->IsSessionFinished()) {
@@ -360,17 +360,17 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			TransportToAppCloseResult *closeResult;
 
 			closeResult = (TransportToAppCloseResult*)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP server at node_%d got close result\n",
-					buf, node->nodeId);*/
+/*			printf("%s: UP server at %s got close result\n",
+					buf, node->hostname);*/
 			if(closeResult->type == TCP_CONN_PASSIVE_CLOSE) {
-				printf("UP server: node_%d passively closed, "
+				printf("UP server: %s passively closed, "
 						"connectionId=%d\n",
-						node->nodeId,
+						node->hostname,
 						closeResult->connectionId);
 			} else {
-				printf("UP server: node_%d actively closed, "
+				printf("UP server: %s actively closed, "
 						"connectionId=%d\n",
-						node->nodeId,
+						node->hostname,
 						closeResult->connectionId);
 			}
 
@@ -389,18 +389,18 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			}
 			break;
 		case MSG_APP_TimerExpired:
-			printf("%s: UP server at node_%d timer expired\n",
-				buf, node->nodeId);
+			printf("%s: UP server at %s timer expired\n",
+				buf, node->hostname);
 			break;
 		case MSG_APP_UP: // General message
-			printf("UP server: node_%d at time %s received message\n",
-					node->nodeId,
+			printf("UP server: %s at time %s received message\n",
+					node->hostname,
 					buf);
 			break;
 		default:
-			printf("UP server: node_%d at time %s received "\
+			printf("UP server: %s at time %s received "\
 				"message of unknown type %d\n",
-				node->nodeId,
+				node->hostname,
 				buf,
 				msg->eventType);
 	}
@@ -412,8 +412,8 @@ void AppLayerUpClient(Node *node, Message *msg) {
 	AppDataUpClient* clientPtr;
 
 	ctoa(node->getNodeTime(), buf);
-/*	printf("UP client: node_%d at time %s processed an event\n",
-		node->nodeId,
+/*	printf("UP client: %s at time %s processed an event\n",
+		node->hostname,
 		buf);*/
 
 	switch(msg->eventType) {
@@ -421,14 +421,14 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			TransportToAppOpenResult *openResult;
 
 			openResult = (TransportToAppOpenResult *)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP client at node_%d got open result\n",
-				buf, node->nodeId);*/
+/*			printf("%s: UP client at %s got open result\n",
+				buf, node->hostname);*/
 			assert(openResult->type == TCP_CONN_ACTIVE_OPEN);
 
 			if(openResult->connectionId < 0) {
-				printf("%s: UP client at node_%d connection failed\n",
+				printf("%s: UP client at %s connection failed\n",
 					buf,
-					node->nodeId);
+					node->hostname);
 				node->appData.numAppTcpFailure ++;
 			} else {
 				AppDataUpClient* clientPtr;
@@ -457,10 +457,10 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			TransportToAppDataSent* dataSent;
 
 			dataSent = (TransportToAppDataSent*)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP client at node_%d sent data\n",
-				buf, node->nodeId);*/
-			printf("UP client: node_%d sent data, packetSize=%d\n",
-					node->nodeId,
+/*			printf("%s: UP client at %s sent data\n",
+				buf, node->hostname);*/
+			printf("UP client: %s sent data, packetSize=%d\n",
+					node->hostname,
 					dataSent->length);
 
 			clientPtr = AppUpClientGetUpClient(node, dataSent->connectionId);
@@ -473,8 +473,8 @@ void AppLayerUpClient(Node *node, Message *msg) {
 				node->appData.appTrafficSender->appTcpCloseConnection(
 						node,
 						clientPtr->connectionId);
-				printf("UP client: node_%d disconnecting, connectionId=%d\n",
-						node->nodeId,
+				printf("UP client: %s disconnecting, connectionId=%d\n",
+						node->hostname,
 						clientPtr->connectionId);
 				if (node->appData.appStats) {
 					if (!clientPtr->stats->IsSessionFinished()) {
@@ -493,11 +493,11 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			packet = MESSAGE_ReturnPacket(msg);
 			packetSize = MESSAGE_ReturnPacketSize(msg);
 
-/*			printf("%s: UP client at node_%d received data\n",
-				buf, node->nodeId);*/
-			printf("UP client: node_%d received data, "
+/*			printf("%s: UP client at %s received data\n",
+				buf, node->hostname);*/
+			printf("UP client: %s received data, "
 					"connectionId=%d packetSize=%d\n",
-					node->nodeId,
+					node->hostname,
 					dataReceived->connectionId,
 					packetSize);
 
@@ -514,8 +514,8 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			TransportToAppCloseResult *closeResult;
 
 			closeResult = (TransportToAppCloseResult*)MESSAGE_ReturnInfo(msg);
-			printf("%s: UP client at node_%d got close result\n",
-				buf, node->nodeId);
+			printf("%s: UP client at %s got close result\n",
+				buf, node->hostname);
 
 			clientPtr = AppUpClientGetUpClient(node,
 					closeResult->connectionId);
@@ -532,14 +532,14 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			}
 			break;
 		case MSG_APP_UP: // General message
-			printf("UP client: node_%d at time %s received message\n",
-					node->nodeId,
+			printf("UP client: %s at time %s received message\n",
+					node->hostname,
 					buf);
 			break;
 		default:
-			printf("UP client: node_%d at time %s received "\
+			printf("UP client: %s at time %s received "\
 				"message of unknown type %d\n",
-				node->nodeId,
+				node->hostname,
 				buf,
 				msg->eventType);
 	}
@@ -551,7 +551,7 @@ void AppUpServerFinalize(Node *node, AppInfo *appInfo) {
 	char addrStr[MAX_STRING_LENGTH];
 
 	// IO_ConvertIpAddressToString(&serverPtr->localAddr, addrStr);
-	printf("UP server: Finalized at node_%d\n", node->nodeId);
+	printf("UP server: Finalized at %s\n", node->hostname);
 
 //	TODO: Statistics
 	if(node->appData.appStats) {
@@ -564,7 +564,7 @@ void AppUpClientFinalize(Node *node, AppInfo *appInfo) {
 	char addrStr[MAX_STRING_LENGTH];
 
 	// IO_ConvertIpAddressToString(&clientPtr->localAddr, addrStr);
-	printf("UP client: Finalized at node_%d\n", node->nodeId);
+	printf("UP client: Finalized at %s\n", node->hostname);
 
 //	TODO: Statistics
 	if(node->appData.appStats) {
@@ -701,9 +701,9 @@ void AppUpClientSendNextPacket(
 
 	ctoa(node->getNodeTime(), buf);
 	if(clientPtr->sessionIsClosed) {
-		printf("%s: UP client at node_%d attempted invalid operation\n",
+		printf("%s: UP client at %s attempted invalid operation\n",
 				buf,
-				node->nodeId);
+				node->hostname);
 		return;
 	}
 
@@ -775,9 +775,9 @@ void AppUpClientSendItem(
 
 	ctoa(node->getNodeTime(), buf);
 	if(clientPtr->sessionIsClosed) {
-		printf("%s: UP client at node_%d attempted invalid operation\n",
+		printf("%s: UP client at %s attempted invalid operation\n",
 				buf,
-				node->nodeId);
+				node->hostname);
 		return;
 	}
 
