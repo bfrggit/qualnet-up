@@ -1,5 +1,7 @@
 main/application.cpp
 libraries/CMakeLists.txt
+libraries/wireless/src/wifi/mac_dot11-mgmt.cpp
+libraries/wireless/src/wifi/mac_dot11.cpp
 libraries/user_models/src/app_up.h
 libraries/user_models/src/app_hello.h
 libraries/user_models/src/app_up.cpp
@@ -8,3 +10,4 @@ libraries/user_models/CMakeLists.txt
 include/application.h
 include/api.h
 include/trace.h
+include/mac.h
