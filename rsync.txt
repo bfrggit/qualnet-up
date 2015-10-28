@@ -6,4 +6,5 @@ libraries/user_models/src/app_up.cpp
 libraries/user_models/src/app_hello.cpp
 libraries/user_models/CMakeLists.txt
 include/application.h
+include/api.h
 include/trace.h

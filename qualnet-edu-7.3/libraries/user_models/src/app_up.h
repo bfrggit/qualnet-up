@@ -126,4 +126,7 @@ AppUpClientPacketList* AppUpClientPacketListAppend(
 		AppUpClientPacketList* list,
 		AppUpClientPacketList* ptr);
 
+void AppUpSendGeneralMessageToServer(Node* node, clocktype delay);
+void AppUpSendGeneralMessageToClient(Node* node, clocktype delay);
+
 #endif

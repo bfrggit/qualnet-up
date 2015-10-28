@@ -28,6 +28,14 @@ void AppUpServerInit(
 		serverAddr,
 		(UInt16) APP_UP_SERVER); // Server port
 
+	// Send general messages
+/*	AppUpSendGeneralMessageToServer(node, TIME_ConvertToClock("0"));
+	AppUpSendGeneralMessageToClient(node, TIME_ConvertToClock("0"));
+	printf("UP server: node_%d, partitionId=%d\n",
+			node->nodeId,
+			node->partitionData->partitionId);*/
+
+
 	IO_ConvertIpAddressToString(&serverAddr, addrStr);
 	printf("UP server: Initialized at node_%d (%s)\n",
 		node->nodeId,
@@ -84,6 +92,13 @@ void AppUpClientInit(
 	printf("UP client: Initialized at node_%d (%s)\n",
 		node->nodeId,
 		addrStr);
+
+	// Test
+/*	AppUpSendGeneralMessageToServer(node, TIME_ConvertToClock("0"));
+	AppUpSendGeneralMessageToClient(node, TIME_ConvertToClock("0"));
+	printf("UP client: node_%d, partitionId=%d\n",
+			node->nodeId,
+			node->partitionData->partitionId);*/
 
 	// Open connection
 	node->appData.appTrafficSender->appTcpOpenConnection(
@@ -288,11 +303,11 @@ void AppLayerUpServer(Node *node, Message *msg) {
 
 /*			printf("%s: UP server at node_%d received data\n",
 				buf, node->nodeId);*/
-			printf("UP server: node_%d received data, "
+/*			printf("UP server: node_%d received data, "
 					"connectionId=%d packetSize=%d\n",
 					node->nodeId,
 					dataReceived->connectionId,
-					packetSize);
+					packetSize);*/
 
 			serverPtr = AppUpServerGetUpServer(node,
 					dataReceived->connectionId);
@@ -316,8 +331,16 @@ void AppLayerUpServer(Node *node, Message *msg) {
 					capSize = sizeof(AppUpMessageHeader) + 1;
 				}
 				serverPtr->itemSizeReceived += packetSize - capSize;
+				printf("UP server: node_%d received data, "
+						"itemSizeExpected=%d\n",
+						node->nodeId,
+						serverPtr->itemSizeExpected);
 			} else if(packet[packetSize - 1] == '$') {
 				serverPtr->itemSizeReceived += packetSize - 1;
+				printf("UP server: node_%d received data, "
+						"itemSizeReceived=%d\n",
+						node->nodeId,
+						serverPtr->itemSizeReceived);
 				node->appData.appTrafficSender->appTcpCloseConnection(
 						node,
 						serverPtr->connectionId);
@@ -368,6 +391,11 @@ void AppLayerUpServer(Node *node, Message *msg) {
 		case MSG_APP_TimerExpired:
 			printf("%s: UP server at node_%d timer expired\n",
 				buf, node->nodeId);
+			break;
+		case MSG_APP_UP: // General message
+			printf("UP server: node_%d at time %s received message\n",
+					node->nodeId,
+					buf);
 			break;
 		default:
 			printf("UP server: node_%d at time %s received "\
@@ -502,6 +530,11 @@ void AppLayerUpClient(Node *node, Message *msg) {
 				clientPtr->sessionIsClosed = true;
 				clientPtr->sessionFinish = node->getNodeTime();
 			}
+			break;
+		case MSG_APP_UP: // General message
+			printf("UP client: node_%d at time %s received message\n",
+					node->nodeId,
+					buf);
 			break;
 		default:
 			printf("UP client: node_%d at time %s received "\
@@ -865,4 +898,18 @@ AppUpClientPacketList* AppUpClientPacketListAppend(
 		ptr->next = item;
 	}
 	return list;
+}
+
+void AppUpSendGeneralMessageToServer(Node* node, clocktype delay) {
+	Message* msg;
+
+	msg = MESSAGE_Alloc(node, APP_LAYER, APP_UP_SERVER, MSG_APP_UP);
+	MESSAGE_Send(node, msg, delay);
+}
+
+void AppUpSendGeneralMessageToClient(Node* node, clocktype delay) {
+	Message* msg;
+
+	msg = MESSAGE_Alloc(node, APP_LAYER, APP_UP_CLIENT, MSG_APP_UP);
+	MESSAGE_Send(node, msg, delay);
 }
