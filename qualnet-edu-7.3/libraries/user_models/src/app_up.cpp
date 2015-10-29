@@ -8,6 +8,8 @@
 #include "app_util.h"
 #include "transport_tcp.h"
 #include "tcpapps.h"
+#include "mac.h"
+#include "mac_dot11.h"
 #include "partition.h"
 #include "ipv6.h"
 
@@ -46,7 +48,7 @@ void AppUpClientInit(
 	Node* node,
 	Address clientAddr,
 	Address serverAddr,
-	char* appName,
+	const char* appName,
 	char* sourceString,
 	AppUpNodeType nodeType) {
 	AppDataUpClient *clientPtr;
@@ -112,7 +114,7 @@ void AppUpClientInit(
 		APP_DEFAULT_TOS,
 		ANY_INTERFACE,
 		std::string(),
-		TIME_ConvertToClock("10"),
+		TIME_ConvertToClock("5"),
 		clientPtr->destNodeId,
 		clientPtr->clientInterfaceIndex,
 		clientPtr->destInterfaceIndex);
@@ -188,7 +190,7 @@ AppDataUpClient* AppUpClientNewUpClient(
 	Node* node,
 	Address clientAddr,
 	Address serverAddr,
-	char* appName,
+	const char* appName,
 	AppUpNodeType nodeType) {
 	AppDataUpClient *upClient;
 	const pthread_mutex_t mutexInit = PTHREAD_MUTEX_INITIALIZER;
@@ -536,6 +538,17 @@ void AppLayerUpClient(Node *node, Message *msg) {
 					node->hostname,
 					buf);
 			break;
+/*		case MSG_APP_UP_FromMacJoinCompleted:
+			MacDataDot11* macData;
+			char macAdder[24];
+
+			macData = (MacDataDot11*)MESSAGE_ReturnPacket(msg);
+			MacDot11MacAddressToStr(macAdder, &macData->bssAddr);
+			printf("UP client: %s joined %s with AP %s\n",
+					node->hostname,
+					macData->stationMIB->dot11DesiredSSID,
+					macAdder);
+			break;*/
 		default:
 			printf("UP client: %s at time %s received "\
 				"message of unknown type %d\n",
@@ -550,7 +563,6 @@ void AppUpServerFinalize(Node *node, AppInfo *appInfo) {
 	AppDataUpServer *serverPtr = (AppDataUpServer*)appInfo->appDetail;
 	char addrStr[MAX_STRING_LENGTH];
 
-	// IO_ConvertIpAddressToString(&serverPtr->localAddr, addrStr);
 	printf("UP server: Finalized at %s\n", node->hostname);
 
 //	TODO: Statistics
@@ -563,7 +575,6 @@ void AppUpClientFinalize(Node *node, AppInfo *appInfo) {
 	AppDataUpClient *clientPtr = (AppDataUpClient*)appInfo->appDetail;
 	char addrStr[MAX_STRING_LENGTH];
 
-	// IO_ConvertIpAddressToString(&clientPtr->localAddr, addrStr);
 	printf("UP client: Finalized at %s\n", node->hostname);
 
 //	TODO: Statistics
@@ -912,4 +923,172 @@ void AppUpSendGeneralMessageToClient(Node* node, clocktype delay) {
 
 	msg = MESSAGE_Alloc(node, APP_LAYER, APP_UP_CLIENT, MSG_APP_UP);
 	MESSAGE_Send(node, msg, delay);
+}
+
+void AppUpClientDaemonInit(
+		Node* node,
+		Node* firstNode,
+		NodeAddress sourceNodeId,
+		NodeAddress destNodeId,
+		char* inputString,
+		char* appName,
+		AppUpNodeType nodeType) {
+	AppDataUpClientDaemon* clientDaemonPtr;
+
+	clientDaemonPtr = AppUpClientNewUpClientDaemon(
+			node,
+			firstNode,
+			sourceNodeId,
+			destNodeId,
+			inputString,
+			appName,
+			nodeType);
+	if(!clientDaemonPtr) { // Failed initialization
+		fprintf(stderr, "UP client: %s cannot allocate "
+			"new client\n", node->hostname);
+		assert(false);
+	}
+	printf("UP client daemon: Initialized at %s\n",
+			node->hostname);
+}
+
+AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
+		Node* node,
+		Node* firstNode,
+		NodeAddress sourceNodeId,
+		NodeAddress destNodeId,
+		char* inputString,
+		char* appName,
+		AppUpNodeType nodeType) {
+	AppDataUpClientDaemon* upClientDaemon;
+
+	// Allocate memory for data structure
+	upClientDaemon = (AppDataUpClientDaemon*)
+			MEM_malloc(sizeof(AppDataUpClientDaemon));
+	memset(upClientDaemon, 0, sizeof(AppDataUpClientDaemon));
+
+	// Fill in node-specific application data
+	upClientDaemon->firstNode = firstNode;
+	upClientDaemon->sourceNodeId = sourceNodeId;
+	upClientDaemon->destNodeId = destNodeId;
+	upClientDaemon->nodeType = nodeType;
+	upClientDaemon->inputString = new std::string(inputString);
+
+	if (appName) {
+		upClientDaemon->applicationName = new std::string(appName);
+	} else {
+		upClientDaemon->applicationName = new std::string();
+	}
+
+	// Register
+	APP_RegisterNewApp(node, APP_UP_CLIENT_DAEMON, upClientDaemon);
+	return upClientDaemon;
+}
+
+void AppLayerUpClientDaemon(Node *node, Message *msg) {
+	char buf[MAX_STRING_LENGTH];
+	AppDataUpClientDaemon* clientDaemonPtr;
+
+	ctoa(node->getNodeTime(), buf);
+/*	printf("UP client: %s at time %s processed an event\n",
+		node->hostname,
+		buf);*/
+
+	switch(msg->eventType) {
+	case MSG_APP_UP_FromMacJoinCompleted: {
+//		Mac802Address* bssAddr;
+		MacDataDot11* macData;
+		char macAdder[24];
+
+/*		bssAddr = (Mac802Address*)MESSAGE_ReturnInfo(msg);
+		MacDot11MacAddressToStr(macAdder, bssAddr);*/
+		macData = (MacDataDot11*)MESSAGE_ReturnPacket(msg);
+		MacDot11MacAddressToStr(macAdder, &macData->bssAddr);
+		printf("UP client daemon: %s joined %s with AP %s\n",
+				node->hostname,
+				macData->stationMIB->dot11DesiredSSID,
+				macAdder);
+
+		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
+		assert(clientDaemonPtr != NULL);
+
+		// Initialize client application
+		char sourceString[MAX_STRING_LENGTH];
+		char destString[MAX_STRING_LENGTH];
+		NodeAddress sourceNodeId;
+		Address sourceAddr;
+		NodeAddress destNodeId;
+		Address destAddr;
+		char sourceAddrStr[MAX_STRING_LENGTH];
+		char destAddrStr[MAX_STRING_LENGTH];
+
+		sscanf(clientDaemonPtr->inputString->c_str(),
+				"%*s %*s %s %s",
+				sourceString,
+				destString);
+		IO_AppParseSourceAndDestStrings(
+				clientDaemonPtr->firstNode,
+				clientDaemonPtr->inputString->c_str(),
+				sourceString,
+				&sourceNodeId,
+				&sourceAddr,
+				destString,
+				&destNodeId,
+				&destAddr);
+		IO_ConvertIpAddressToString(&sourceAddr, sourceAddrStr);
+		IO_ConvertIpAddressToString(&destAddr, destAddrStr);
+		printf("Starting UP client with:\n");
+		printf("  src: node_%u (%s)\n",
+				sourceNodeId,
+				sourceAddrStr);
+		printf("  dst: node_%u (%s)\n",
+				destNodeId,
+				destAddrStr);
+
+		for(int j = 0; j < 2; ++j) {
+			AppUpClientInit(
+					node,
+					sourceAddr,
+					destAddr,
+					clientDaemonPtr->applicationName->c_str(),
+					sourceString,
+					clientDaemonPtr->nodeType);
+		}
+		break; }
+	default:
+		printf("UP client daemon: %s at time %s received "\
+			"message of unknown type %d\n",
+			node->hostname,
+			buf,
+			msg->eventType);
+	}
+}
+
+void AppUpClientDaemonFinalize(Node *node, AppInfo *appInfo) {
+	AppDataUpClient *clientDaemonPtr = (AppDataUpClient*)appInfo->appDetail;
+	char addrStr[MAX_STRING_LENGTH];
+
+	printf("UP client daemon: Finalized at %s\n", node->hostname);
+
+//	TODO: Statistics
+	if(node->appData.appStats) {
+		;
+	}
+}
+
+AppDataUpClientDaemon*
+AppUpClientGetUpClientDaemon(Node *node)
+{
+	AppInfo *appList = node->appData.appPtr;
+	AppDataUpClientDaemon *upClientDaemon;
+
+	for (; appList != NULL; appList = appList->appNext)
+	{
+		if (appList->appType == APP_UP_CLIENT_DAEMON)
+		{
+			upClientDaemon = (AppDataUpClientDaemon *) appList->appDetail;
+			return upClientDaemon;
+		}
+	}
+	return NULL;
 }

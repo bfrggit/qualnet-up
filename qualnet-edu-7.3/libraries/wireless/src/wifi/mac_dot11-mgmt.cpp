@@ -5309,17 +5309,41 @@ int MacDot11ManagementJoinCompleted(
     dot11->cfpMaxDuration = MacDot11TUsToClocktype
         (dot11->associatedAP->cfSet.cfpMaxDuration);
 
-    if (DEBUG_MANAGEMENT){
-        char timeStr[100];
-        char macAdder[24];
-        MacDot11MacAddressToStr(macAdder,&dot11->bssAddr);
-        ctoa(node->getNodeTime(), timeStr);
-        printf("MacDot11ManagementJoinCompleted: "
-            "Station %d joined with AP %s with with SSID %s at Time %s",
-                node->nodeId, macAdder,
-                dot11->stationMIB->dot11DesiredSSID,
-                timeStr);
-    }
+    // Modifications
+	if (DEBUG_MANAGEMENT /*true*/) {
+		char timeStr[100];
+		char macAdder[24];
+
+		MacDot11MacAddressToStr(macAdder,&dot11->bssAddr);
+		ctoa(node->getNodeTime(), timeStr);
+		printf("MacDot11ManagementJoinCompleted: "
+			"%s joined %s with AP %s at time %s\n",
+				node->hostname /*node->nodeId*/,
+				dot11->stationMIB->dot11DesiredSSID,
+				macAdder,
+				timeStr);
+	}
+
+	Message* msg;
+	ActionData acnData;
+	int infoSize = sizeof(dot11->bssAddr);
+	int packetSize = sizeof(MacDataDot11);
+
+	msg = MESSAGE_Alloc(node,
+			APP_LAYER,
+			APP_UP_CLIENT_DAEMON /*APP_UP_CLIENT*/,
+			MSG_APP_UP_FromMacJoinCompleted);
+	MESSAGE_InfoAlloc(node, msg, infoSize);
+	memcpy(MESSAGE_ReturnInfo(msg), &dot11->bssAddr, infoSize);
+	MESSAGE_PacketAlloc(node, msg, packetSize, TRACE_UP);
+	memcpy(MESSAGE_ReturnPacket(msg), dot11, packetSize);
+
+	//Trace Information
+	acnData.actionType = SEND;
+	acnData.actionComment = NO_COMMENT;
+	TRACE_PrintTrace(node, msg, TRACE_MAC_LAYER,
+			PACKET_OUT, &acnData);
+	MESSAGE_Send(node, msg, TIME_ConvertToClock("0"));
 
     MacDot11ManagementSetState(
         node,
@@ -5335,7 +5359,7 @@ int MacDot11ManagementJoinCompleted(
         MacDot11nResetAmsduBuffer(node, dot11, TRUE, FALSE);
         MacDot11nResetCurrentMessageVariables(dot11);
     }
-    printf("Magic line at %s\n", node->hostname);
+//    printf("Magic line at %s\n", node->hostname);
 
     return result;
 } // MacDot11ManagementJoinCompleted

@@ -154,6 +154,7 @@ enum AppType
     // Modifications
     APP_UP_SERVER,
     APP_UP_CLIENT,
+	APP_UP_CLIENT_DAEMON,
 
     // HLA_INTERFACE
     APP_HLA = 1800,

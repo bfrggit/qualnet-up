@@ -3390,30 +3390,27 @@ APP_InitializeApplications(
 					if (node != NULL) {
 #ifdef DEBUG
 						char sourceAddrStr[MAX_STRING_LENGTH];
-						char destAddrStr[MAX_STRING_LENGTH];
 
 						IO_ConvertIpAddressToString(
 								&sourceAddr,
 								sourceAddrStr);
-						IO_ConvertIpAddressToString(&destAddr, destAddrStr);
-						printf("Starting UP client with:\n");
-						printf("  src: node_%u (%s)\n",
-								sourceNodeId,
-								sourceAddrStr);
-						printf("  dst: node_%u (%s)\n",
-								destNodeId,
-								destAddrStr);
+						printf("Starting UP client daemon with:\n");
+						printf("  src: node_%u\n",
+								sourceNodeId);
+						printf("  dst: node_%u\n",
+								destNodeId);
 						printf("Starting UP server at:\n");
 						printf("  node_%u (%s)\n",
 								sourceNodeId,
 								sourceAddrStr);
 #endif // DEBUG
-						AppUpClientInit(
+						AppUpClientDaemonInit(
 							node,
-							sourceAddr,
-							destAddr,
+							firstNode,
+							sourceNodeId,
+							destNodeId,
+							appInput.inputStrings[i],
 							appNamePtr,
-							sourceString,
 							nodeType);
 						AppUpServerInit(
 							node,
@@ -3433,27 +3430,26 @@ APP_InitializeApplications(
                 	node = MAPPING_GetNodePtrFromHash(nodeHash, sourceNodeId);
 					if (node != NULL) {
 #ifdef DEBUG
-						char sourceAddrStr[MAX_STRING_LENGTH];
-						char destAddrStr[MAX_STRING_LENGTH];
-
-						IO_ConvertIpAddressToString(
-								&sourceAddr,
-								sourceAddrStr);
-						IO_ConvertIpAddressToString(&destAddr, destAddrStr);
-						printf("Starting UP client with:\n");
-						printf("  src: node_%u (%s)\n",
-								sourceNodeId,
-								sourceAddrStr);
-						printf("  dst: node_%u (%s)\n",
-								destNodeId,
-								destAddrStr);
+						printf("Starting UP client daemon with:\n");
+						printf("  src: node_%u\n",
+								sourceNodeId);
+						printf("  dst: node_%u\n",
+								destNodeId);
 #endif // DEBUG
-						AppUpClientInit(
+/*						AppUpClientInit(
 							node,
 							sourceAddr,
 							destAddr,
 							appNamePtr,
 							sourceString,
+							nodeType);*/
+						AppUpClientDaemonInit(
+							node,
+							firstNode,
+							sourceNodeId,
+							destNodeId,
+							appInput.inputStrings[i],
+							appNamePtr,
 							nodeType);
 					}
                 	break;
@@ -6914,6 +6910,10 @@ void APP_ProcessEvent(Node *node, Message *msg)
             AppLayerUpClient(node, msg);
             break;
         }
+        case APP_UP_CLIENT_DAEMON: {
+        	AppLayerUpClientDaemon(node, msg);
+        	break;
+        }
 #endif // USER_MODELS_LIB
 
         default:
@@ -7635,6 +7635,10 @@ APP_Finalize(Node *node)
             case APP_UP_CLIENT: {
                 AppUpClientFinalize(node, appList);
                 break;
+            }
+            case APP_UP_CLIENT_DAEMON: {
+            	AppUpClientDaemonFinalize(node, appList);
+            	break;
             }
 #endif // USER_MODELS_LIB
 

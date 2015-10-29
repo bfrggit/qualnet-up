@@ -901,6 +901,7 @@ enum
 
 	// Modifications
 	MSG_APP_UP,
+	MSG_APP_UP_FromMacJoinCompleted,
 
     /*
      * Any other message types which have to be added should be added before

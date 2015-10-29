@@ -64,6 +64,15 @@ typedef struct struct_app_up_message_header {
 	Int32       itemSize;
 } AppUpMessageHeader;
 
+typedef struct struct_app_up_client_daemon_str {
+	Node*       firstNode;
+	NodeAddress sourceNodeId;
+	NodeAddress destNodeId;
+	AppUpNodeType nodeType;
+	std::string* inputString;
+	std::string* applicationName;
+} AppDataUpClientDaemon;
+
 void AppUpServerInit(
 	Node *node,
 	Address serverAddr);
@@ -72,7 +81,7 @@ void AppUpClientInit(
 	Node* node,
 	Address clientAddr,
 	Address serverAddr,
-	char* appName,
+	const char* appName,
 	char* sourceString,
 	AppUpNodeType nodeType);
 
@@ -89,7 +98,7 @@ AppDataUpClient* AppUpClientNewUpClient(
 	Node* node,
 	Address clientAddr,
 	Address serverAddr,
-	char* appName,
+	const char* appName,
 	AppUpNodeType nodeType);
 
 void AppUpServerPrintStats(Node *node, AppDataUpServer *serverPtr);
@@ -128,5 +137,28 @@ AppUpClientPacketList* AppUpClientPacketListAppend(
 
 void AppUpSendGeneralMessageToServer(Node* node, clocktype delay);
 void AppUpSendGeneralMessageToClient(Node* node, clocktype delay);
+
+void AppUpClientDaemonInit(
+		Node* node,
+		Node* firstNode,
+		NodeAddress sourceNodeId,
+		NodeAddress destNodeId,
+		char* inputString,
+		char* appName,
+		AppUpNodeType nodeType);
+
+AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
+		Node* node,
+		Node* firstNode,
+		NodeAddress sourceNodeId,
+		NodeAddress destNodeId,
+		char* inputString,
+		char* appName,
+		AppUpNodeType nodeType);
+
+void AppLayerUpClientDaemon(Node *node, Message *packet);
+void AppUpClientDaemonFinalize(Node *node, AppInfo *appInfo);
+
+AppDataUpClientDaemon* AppUpClientGetUpClientDaemon(Node *node);
 
 #endif

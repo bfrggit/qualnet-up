@@ -1,7 +1,9 @@
 main/application.cpp
 libraries/CMakeLists.txt
+libraries/wireless/src/wifi/mac_dot11-mgmt.h
 libraries/wireless/src/wifi/mac_dot11-mgmt.cpp
 libraries/wireless/src/wifi/mac_dot11.cpp
+libraries/wireless/src/wifi/mac_dot11.h
 libraries/user_models/src/app_up.h
 libraries/user_models/src/app_hello.h
 libraries/user_models/src/app_up.cpp
