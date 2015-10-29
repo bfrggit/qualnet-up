@@ -1,4 +1,5 @@
 main/application.cpp
+main/message.cpp
 libraries/CMakeLists.txt
 libraries/wireless/src/wifi/mac_dot11-mgmt.h
 libraries/wireless/src/wifi/mac_dot11-mgmt.cpp

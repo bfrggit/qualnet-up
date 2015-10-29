@@ -11,6 +11,17 @@ typedef enum enum_app_up_node_type {
 	APP_UP_NODE_DATA_SITE
 } AppUpNodeType;
 
+typedef struct struct_app_up_server_item_data {
+	Int32       sizeExpected;
+	Int32       sizeReceived;
+	int         identifier;
+} AppUpServerItemData;
+
+typedef struct struct_app_up_client_packet_list {
+	char*       payload;
+	Int32       packetSize;
+	struct_app_up_client_packet_list* next;
+} AppUpClientPacketList;
 
 typedef struct struct_app_up_server_str {
 	int         connectionId;
@@ -20,19 +31,13 @@ typedef struct struct_app_up_server_str {
 	short       remotePort;
 	int         uniqueId;
 	RandomSeed  seed;
-	Int32       itemSizeExpected;
-	Int32       itemSizeReceived;
+	AppUpNodeType nodeType;
+	AppUpServerItemData itemData;
 	bool        sessionIsClosed;
 	clocktype   sessionStart;
 	clocktype   sessionFinish;
 	STAT_AppStatistics* stats;
 } AppDataUpServer;
-
-typedef struct struct_app_up_client_packet_list {
-	char*       payload;
-	Int32       packetSize;
-	struct_app_up_client_packet_list* next;
-} AppUpClientPacketList;
 
 typedef struct struct_app_up_client_str {
 	int         connectionId;
@@ -62,6 +67,7 @@ typedef enum enum_app_up_message_type {
 typedef struct struct_app_up_message_header {
 	AppUpMessageType type;
 	Int32       itemSize;
+	int         identifier;
 } AppUpMessageHeader;
 
 typedef struct struct_app_up_client_daemon_str {
@@ -118,7 +124,10 @@ void AppUpClientSendNextPacket(
 		Node *node,
 		AppDataUpClient *clientPtr);
 
-char* AppUpClientNewDataItem(Int32 itemSize, Int32& fullSize);
+char* AppUpClientNewDataItem(
+		Int32 itemSize,
+		Int32& fullSize,
+		int identifier);
 
 void AppUpClientSendItem(
 		Node* node,

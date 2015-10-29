@@ -12,6 +12,8 @@
 #include "mac_dot11.h"
 #include "partition.h"
 #include "ipv6.h"
+#include "mobility.h"
+#include "coordinates.h"
 
 #include "app_up.h"
 
@@ -91,9 +93,10 @@ void AppUpClientInit(
 	AppUpClientAddAddressInformation(node, clientPtr);
 
 	IO_ConvertIpAddressToString(&clientAddr, addrStr);
-	printf("UP client: Initialized at %s (%s)\n",
+	printf("UP client: Initialized at %s (%s), uniqueId=%d\n",
 		node->hostname,
-		addrStr);
+		addrStr,
+		clientPtr->uniqueId);
 
 	// Test
 /*	AppUpSendGeneralMessageToServer(node, TIME_ConvertToClock("0"));
@@ -140,12 +143,19 @@ AppDataUpServer* AppUpServerNewUpServer(
 	upServer->localPort = openResult->localPort;
 	upServer->remotePort = openResult->remotePort;
 	upServer->uniqueId = node->appData.uniqueId++;
-	upServer->itemSizeExpected = -1;
-	upServer->itemSizeReceived = 0;
+	upServer->itemData.sizeExpected = -1;
+	upServer->itemData.sizeReceived = 0;
 	upServer->sessionIsClosed = false;
 	upServer->sessionStart = node->getNodeTime();
 	upServer->sessionFinish = node->getNodeTime();
 	upServer->stats = NULL;
+
+	// Determine role of server
+	if(AppUpClientGetUpClientDaemon(node) == NULL) {
+		upServer->nodeType = APP_UP_NODE_CLOUD;
+	} else {
+		upServer->nodeType = APP_UP_NODE_MDC;
+	}
 
 	if (node->appData.appStats)
 	{
@@ -326,23 +336,26 @@ void AppLayerUpServer(Node *node, Message *msg) {
 				AppUpMessageHeader* header = (AppUpMessageHeader*)(packet + 1);
 				Int32 capSize;
 
-				serverPtr->itemSizeExpected = header->itemSize;
+				serverPtr->itemData.sizeExpected = header->itemSize;
+				serverPtr->itemData.identifier = header->identifier;
 				if(packet[packetSize - 1] == '$') {
 					capSize = sizeof(AppUpMessageHeader) + 2;
 				} else {
 					capSize = sizeof(AppUpMessageHeader) + 1;
 				}
-				serverPtr->itemSizeReceived += packetSize - capSize;
+				serverPtr->itemData.sizeReceived += packetSize - capSize;
 				printf("UP server: %s received data, "
-						"itemSizeExpected=%d\n",
+						"id=%d itemSizeExpected=%d\n",
 						node->hostname,
-						serverPtr->itemSizeExpected);
+						serverPtr->itemData.identifier,
+						serverPtr->itemData.sizeExpected);
 			} else if(packet[packetSize - 1] == '$') {
-				serverPtr->itemSizeReceived += packetSize - 1;
+				serverPtr->itemData.sizeReceived += packetSize - 1;
 				printf("UP server: %s received data, "
-						"itemSizeReceived=%d\n",
+						"id=%d itemSizeReceived=%d\n",
 						node->hostname,
-						serverPtr->itemSizeReceived);
+						serverPtr->itemData.identifier,
+						serverPtr->itemData.sizeReceived);
 				node->appData.appTrafficSender->appTcpCloseConnection(
 						node,
 						serverPtr->connectionId);
@@ -355,7 +368,7 @@ void AppLayerUpServer(Node *node, Message *msg) {
 					}
 				}
 			} else {
-				serverPtr->itemSizeReceived += packetSize;
+				serverPtr->itemData.sizeReceived += packetSize;
 			}
 			break;
 		case MSG_APP_FromTransCloseResult:
@@ -441,8 +454,11 @@ void AppLayerUpClient(Node *node, Message *msg) {
 				clientPtr = AppUpClientUpdateUpClient(node, openResult);
 				assert(clientPtr != NULL);
 
-				// XXX: Test only
-				item = AppUpClientNewDataItem(itemSize, fullSize);
+				// XXX: Should get item from daemon
+				item = AppUpClientNewDataItem(
+						itemSize,
+						fullSize,
+						openResult->connectionId);
 				AppUpClientSendItem(node, clientPtr, item, fullSize);
 
 				pthread_mutex_lock(&clientPtr->packetListMutex);
@@ -750,7 +766,7 @@ void AppUpClientSendNextPacket(
 		clientPtr->sessionIsClosed = true;
 		clientPtr->sessionFinish = node->getNodeTime();
 
-		//	TODO: Statistics
+		// TODO: Statistics
 		if (node->appData.appStats)
 		{
 			;
@@ -758,7 +774,10 @@ void AppUpClientSendNextPacket(
 	}
 }
 
-char* AppUpClientNewDataItem(Int32 itemSize, Int32& fullSize) {
+char* AppUpClientNewDataItem(
+		Int32 itemSize,
+		Int32& fullSize,
+		int identifier) {
 	char* item;
 	AppUpMessageHeader* header;
 
@@ -770,6 +789,7 @@ char* AppUpClientNewDataItem(Int32 itemSize, Int32& fullSize) {
 	header = (AppUpMessageHeader*)(item + 1);
 	header->type = APP_UP_MSG_DATA;
 	header->itemSize = itemSize;
+	header->identifier = identifier;
 	return item;
 }
 
@@ -1010,7 +1030,75 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				macAdder);
 
 		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
-		assert(clientDaemonPtr != NULL);
+//		assert(clientDaemonPtr != NULL);
+		if(!clientDaemonPtr) break;
+
+		// Print coordinates
+		Coordinates crds;
+		Orientation ornt;
+
+		MOBILITY_ReturnCoordinates(node, &crds);
+		MOBILITY_ReturnOrientation(node, &ornt);
+
+		// Debug coordinates
+/*		if(true) {
+			printf("Cartesian coordinates: (%.1f, %.1f, %.1f)\n",
+					crds.cartesian.x, crds.cartesian.y, crds.cartesian.z);
+			printf("Latlonalt coordinates: (%.1f, %.1f, %.1f)\n",
+					crds.latlonalt.latitude,
+					crds.latlonalt.longitude,
+					crds.latlonalt.altitude);
+			printf("Common coordinates: (%.1f, %.1f, %.1f)\n",
+					crds.common.c1, crds.common.c2, crds.common.c3);
+		}*/
+
+		// Debug coordinates
+/*		switch(crds.type) {
+		case INVALID_COORDINATE_TYPE:
+			printf("UP client daemon: Invalid type of coordinates\n");
+			break;
+		case UNREFERENCED_CARTESIAN:
+			printf("UP client daemon: Unreferenced Cartesian\n");
+			break;
+		case GEODETIC:
+			printf("UP client daemon: Geodetic\n");
+			break;
+		case GEOCENTRIC_CARTESIAN:
+			printf("UP client daemon: Geocentric Cartesian\n");
+			break;
+		case LTSE:
+			printf("UP client daemon: LTSE\n");
+			break;
+		case JGIS:
+			printf("UP client daemon: JGIS\n");
+			break;
+		case MGRS_CARTESIAN:
+			printf("UP client daemon: MGRS\n");
+			break;
+		default:
+			printf("UP client daemon: Unknown type of coordinates\n");
+		}*/
+
+		printf("UP client daemon: %s is at (%.1f, %.1f, %.1f)\n",
+				node->hostname,
+				crds.cartesian.x,
+				crds.cartesian.y,
+				crds.cartesian.z);
+
+		// Print other mobility facts
+		MobilityData* mobility = node->mobilityData;
+		MobilityRemainder* remainder = &mobility->remainder;
+		const Coordinates* dest = &mobility
+				->destArray[remainder->destCounter].position;
+
+		printf("UP client daemon: %s is moving at speed %.1f\n",
+				node->hostname,
+				mobility->current->speed);
+		printf("UP client daemon: %s is heading to (%.1f, %.1f, %.1f)\n",
+				node->hostname,
+				dest->cartesian.x,
+				dest->cartesian.y,
+				dest->cartesian.z);
 
 		// Initialize client application
 		char sourceString[MAX_STRING_LENGTH];
@@ -1035,7 +1123,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				destString,
 				&destNodeId,
 				&destAddr);
-		IO_ConvertIpAddressToString(&sourceAddr, sourceAddrStr);
+/*		IO_ConvertIpAddressToString(&sourceAddr, sourceAddrStr);
 		IO_ConvertIpAddressToString(&destAddr, destAddrStr);
 		printf("Starting UP client with:\n");
 		printf("  src: node_%u (%s)\n",
@@ -1043,9 +1131,9 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				sourceAddrStr);
 		printf("  dst: node_%u (%s)\n",
 				destNodeId,
-				destAddrStr);
+				destAddrStr);*/
 
-		for(int j = 0; j < 2; ++j) {
+		for(int j = 0; j < 1; ++j) {
 			AppUpClientInit(
 					node,
 					sourceAddr,
@@ -1062,6 +1150,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 			buf,
 			msg->eventType);
 	}
+	MESSAGE_Free(node, msg);
 }
 
 void AppUpClientDaemonFinalize(Node *node, AppInfo *appInfo) {
