@@ -88,6 +88,8 @@ typedef struct struct_app_up_client_daemon_str {
 	std::string* applicationName;
 	AppUpClientDaemonDataChunkStr* dataChunks;
 	bool        test;
+	int         joinedId;
+	map<int, int>* plan;
 } AppDataUpClientDaemon;
 
 void AppUpServerInit(
@@ -186,6 +188,17 @@ void AppUpClientDaemonFinalize(Node *node, AppInfo *appInfo);
 AppDataUpClientDaemon* AppUpClientGetUpClientDaemon(Node *node);
 
 const float APP_UP_WIRELESS_CLOSE_RANGE = 0.0;
-const int APP_UP_WIRELESS_WAIT_BEFORE_CONNECTION = 5;
+const int APP_UP_WIRELESS_AP_WAIT_TIME = 5;
+const int APP_UP_WIRELESS_MDC_WAIT_TIME = 4;
+
+int AppUpClientDaemonGetNextDataChunk(AppDataUpClientDaemon* clientDaemonPtr);
+void AppUpClientDaemonSendNextDataChunk(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		Address sourceAddr,
+		Address destAddr,
+		char* sourceString,
+		int waitTime,
+		char* daemonRecFileName);
 
 #endif
