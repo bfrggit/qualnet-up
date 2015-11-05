@@ -902,6 +902,8 @@ enum
 	// Modifications
 	MSG_APP_UP,
 	MSG_APP_UP_FromMacJoinCompleted,
+	MSG_APP_UP_DataChunkDelivered,
+	MSG_APP_UP_DataChunkReceived,
 
     /*
      * Any other message types which have to be added should be added before

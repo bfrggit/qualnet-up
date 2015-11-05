@@ -11,18 +11,6 @@ typedef enum enum_app_up_node_type {
 	APP_UP_NODE_DATA_SITE
 } AppUpNodeType;
 
-typedef struct struct_app_up_server_item_data {
-	Int32       sizeExpected;
-	Int32       sizeReceived;
-	int         identifier;
-} AppUpServerItemData;
-
-typedef struct struct_app_up_client_packet_list {
-	char*       payload;
-	Int32       packetSize;
-	struct_app_up_client_packet_list* next;
-} AppUpClientPacketList;
-
 typedef struct struct_app_up_client_daemon_data_chunk_str {
 	int         identifier;
 	int         size; // KB
@@ -30,6 +18,18 @@ typedef struct struct_app_up_client_daemon_data_chunk_str {
 	float       priority;
 	struct_app_up_client_daemon_data_chunk_str* next;
 } AppUpClientDaemonDataChunkStr;
+
+typedef struct struct_app_up_server_item_data {
+	Int32       sizeExpected;
+	Int32       sizeReceived;
+	AppUpClientDaemonDataChunkStr dataChunk;
+} AppUpServerItemData;
+
+typedef struct struct_app_up_client_packet_list {
+	char*       payload;
+	Int32       packetSize;
+	struct_app_up_client_packet_list* next;
+} AppUpClientPacketList;
 
 typedef struct struct_app_up_server_str {
 	int         connectionId;
@@ -76,7 +76,7 @@ typedef enum enum_app_up_message_type {
 typedef struct struct_app_up_message_header {
 	AppUpMessageType type;
 	Int32       itemSize;
-	int         identifier;
+	AppUpClientDaemonDataChunkStr dataChunk;
 } AppUpMessageHeader;
 
 typedef struct struct_app_up_client_daemon_str {
@@ -140,7 +140,9 @@ void AppUpClientSendNextPacket(
 char* AppUpClientNewDataItem(
 		Int32 itemSize,
 		Int32& fullSize,
-		int identifier);
+		int identifier,
+		int deadline,
+		float priority);
 
 void AppUpClientSendItem(
 		Node* node,
