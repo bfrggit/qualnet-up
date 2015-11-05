@@ -23,6 +23,14 @@ typedef struct struct_app_up_client_packet_list {
 	struct_app_up_client_packet_list* next;
 } AppUpClientPacketList;
 
+typedef struct struct_app_up_client_daemon_data_chunk_str {
+	int         identifier;
+	int         size; // KB
+	int         deadline;
+	float       priority;
+	struct_app_up_client_daemon_data_chunk_str* next;
+} AppUpClientDaemonDataChunkStr;
+
 typedef struct struct_app_up_server_str {
 	int         connectionId;
 	Address     localAddr;
@@ -58,6 +66,7 @@ typedef struct struct_app_up_client_str {
 	clocktype   sessionFinish;
 	STAT_AppStatistics* stats;
 	std::string* applicationName;
+	AppUpClientDaemonDataChunkStr* dataChunk;
 } AppDataUpClient;
 
 typedef enum enum_app_up_message_type {
@@ -77,6 +86,8 @@ typedef struct struct_app_up_client_daemon_str {
 	AppUpNodeType nodeType;
 	std::string* inputString;
 	std::string* applicationName;
+	AppUpClientDaemonDataChunkStr* dataChunks;
+	bool        test;
 } AppDataUpClientDaemon;
 
 void AppUpServerInit(
@@ -89,7 +100,9 @@ void AppUpClientInit(
 	Address serverAddr,
 	const char* appName,
 	char* sourceString,
-	AppUpNodeType nodeType);
+	AppUpNodeType nodeType,
+	int waitTime,
+	AppUpClientDaemonDataChunkStr* chunk);
 
 void AppLayerUpServer(Node *node, Message *packet);
 void AppLayerUpClient(Node *node, Message *packet);
@@ -169,5 +182,8 @@ void AppLayerUpClientDaemon(Node *node, Message *packet);
 void AppUpClientDaemonFinalize(Node *node, AppInfo *appInfo);
 
 AppDataUpClientDaemon* AppUpClientGetUpClientDaemon(Node *node);
+
+const float APP_UP_WIRELESS_CLOSE_RANGE = 0.0;
+const int APP_UP_WIRELESS_WAIT_BEFORE_CONNECTION = 5;
 
 #endif

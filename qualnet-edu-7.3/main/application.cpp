@@ -3314,46 +3314,74 @@ APP_InitializeApplications(
                 Address destAddr;
                 AppUpNodeType nodeType;
 
+                char nodeConfigFileName[MAX_STRING_LENGTH];
+                char dataChunkIdString[MAX_STRING_LENGTH];
+                char dataChunkSizeString[MAX_STRING_LENGTH];
+                char dataChunkDeadlineString[MAX_STRING_LENGTH];
+                char dataChunkPriorityString[MAX_STRING_LENGTH];
+
                 numValues = sscanf(appInput.inputStrings[i],
-                                "%*s %s %s %s",
-								nodeTypeString,
-                                sourceString,
-                                destString);
+						"%*s %s %s",
+						nodeTypeString,
+						sourceString);
 
                 // Check integraty before parsing parameters
-                switch (numValues)
-                {
-                    case 3:
-                        break;
-                    default:
-                    {
-                        char errorString[MAX_STRING_LENGTH];
-                        sprintf(errorString,
-                                "Wrong UP configuration format!\n"
-                                "UP <type> <src> <dest>\n");
-                        ERROR_ReportError(errorString);
-                    }
-                }
+				switch (numValues) {
+					case 2: break;
+					default: {
+						char errorString[MAX_STRING_LENGTH];
+						sprintf(errorString,
+								"Wrong UP configuration format!\n"
+								"UP <type> <node> ...\n");
+						ERROR_ReportError(errorString);
+					}
+				}
 
                 // Parse node type
-                if (strcmp(nodeTypeString, "CLOUD") == 0) {
-                	nodeType = APP_UP_NODE_CLOUD;
-                } else if (strcmp(nodeTypeString, "MDC") == 0) {
-                	nodeType = APP_UP_NODE_MDC;
-                } else if (strcmp(nodeTypeString, "DATA") == 0) {
-                	nodeType = APP_UP_NODE_DATA_SITE;
-                } else {
-                	char errorString[MAX_STRING_LENGTH];
+				if (strcmp(nodeTypeString, "CLOUD") == 0) {
+					nodeType = APP_UP_NODE_CLOUD;
+				} else if (strcmp(nodeTypeString, "MDC") == 0) {
+					nodeType = APP_UP_NODE_MDC;
+					numValues += sscanf(appInput.inputStrings[i],
+							"%*s %*s %*s %s %s",
+							destString,
+							nodeConfigFileName);
+					if (numValues != 4) {
+						char errorString[MAX_STRING_LENGTH];
+						sprintf(errorString,
+								"Wrong UP configuration format!\n"
+								"UP MDC <source> <dest> <config>\n");
+						ERROR_ReportError(errorString);
+					}
+				} else if (strcmp(nodeTypeString, "DATA") == 0) {
+					nodeType = APP_UP_NODE_DATA_SITE;
+					numValues += sscanf(appInput.inputStrings[i],
+							"%*s %*s %*s %s %s %s %s %s",
+							destString,
+							dataChunkIdString,
+							dataChunkSizeString,
+							dataChunkDeadlineString,
+							dataChunkPriorityString);
+					if (numValues != 7) {
+						char errorString[MAX_STRING_LENGTH];
+						sprintf(errorString,
+								"Wrong UP configuration format!\n"
+								"UP DATA <source> <dest> "
+								"<id> <size> <deadline> <priority>\n");
+						ERROR_ReportError(errorString);
+					}
+				} else {
+					char errorString[MAX_STRING_LENGTH];
 					sprintf(errorString,
 							"Wrong UP configuration format: "
 							"Invalid node type\n");
-                	ERROR_ReportError(errorString);
-                }
+					ERROR_ReportError(errorString);
+				}
 
                 // Parse addresses with respect to node type
                 // Initialize client and/or server instances
                 switch (nodeType) {
-                case APP_UP_NODE_CLOUD:
+                case APP_UP_NODE_CLOUD: {
                 	IO_AppParseDestString(
                 		firstNode,
 						appInput.inputStrings[i],
@@ -3375,8 +3403,8 @@ APP_InitializeApplications(
 							node,
 							sourceAddr);
 					}
-                	break;
-                case APP_UP_NODE_MDC:
+                	break; }
+                case APP_UP_NODE_MDC: {
                 	IO_AppParseSourceAndDestStrings(
 						firstNode,
 						appInput.inputStrings[i],
@@ -3416,8 +3444,8 @@ APP_InitializeApplications(
 							node,
 							sourceAddr);
 					}
-                	break;
-                case APP_UP_NODE_DATA_SITE:
+                	break; }
+                case APP_UP_NODE_DATA_SITE: {
                 	IO_AppParseSourceAndDestStrings(
 						firstNode,
 						appInput.inputStrings[i],
@@ -3452,7 +3480,7 @@ APP_InitializeApplications(
 							appNamePtr,
 							nodeType);
 					}
-                	break;
+                	break; }
                 default:
                 	assert(false);
                 }

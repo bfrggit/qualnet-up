@@ -3,6 +3,8 @@
 #include <string.h>
 #include <time.h>
 #include <pthread.h>
+#include <iostream>
+#include <fstream>
 
 #include "api.h"
 #include "app_util.h"
@@ -39,6 +41,12 @@ void AppUpServerInit(
 			node->hostname,
 			node->partitionData->partitionId);*/
 
+	char serverRecFileName[MAX_STRING_LENGTH];
+	ofstream serverRecFile;
+
+	sprintf(serverRecFileName, "rec_%s.out", node->hostname);
+	serverRecFile.open(serverRecFileName);
+	serverRecFile.close();
 
 	IO_ConvertIpAddressToString(&serverAddr, addrStr);
 	printf("UP server: Initialized at %s (%s)\n",
@@ -52,7 +60,9 @@ void AppUpClientInit(
 	Address serverAddr,
 	const char* appName,
 	char* sourceString,
-	AppUpNodeType nodeType) {
+	AppUpNodeType nodeType,
+	int waitTime,
+	AppUpClientDaemonDataChunkStr* chunk) {
 	AppDataUpClient *clientPtr;
 	char addrStr[MAX_STRING_LENGTH];
 
@@ -90,6 +100,7 @@ void AppUpClientInit(
 				 (STAT_SessionIdType)clientPtr->uniqueId,
 				 clientPtr->uniqueId);
 	}
+	clientPtr->dataChunk = chunk;
 	AppUpClientAddAddressInformation(node, clientPtr);
 
 	IO_ConvertIpAddressToString(&clientAddr, addrStr);
@@ -106,6 +117,9 @@ void AppUpClientInit(
 			node->partitionData->partitionId);*/
 
 	// Open connection
+	char waitTimeStr[MAX_STRING_LENGTH];
+
+	sprintf(waitTimeStr, "%d", waitTime);
 	node->appData.appTrafficSender->appTcpOpenConnection(
 		node,
 		APP_UP_CLIENT,
@@ -117,7 +131,7 @@ void AppUpClientInit(
 		APP_DEFAULT_TOS,
 		ANY_INTERFACE,
 		std::string(),
-		TIME_ConvertToClock("5"),
+		TIME_ConvertToClock(waitTimeStr),
 		clientPtr->destNodeId,
 		clientPtr->clientInterfaceIndex,
 		clientPtr->destInterfaceIndex);
@@ -362,6 +376,22 @@ void AppLayerUpServer(Node *node, Message *msg) {
 				printf("UP server: %s disconnecting, connectionId=%d\n",
 						node->hostname,
 						serverPtr->connectionId);
+
+				char serverRecFileName[MAX_STRING_LENGTH];
+				ofstream serverRecFile;
+				char clockInSecond[MAX_STRING_LENGTH];
+
+				sprintf(serverRecFileName, "rec_%s.out",
+						node->hostname);
+				serverRecFile.open(serverRecFileName, ios::app);
+				TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+				serverRecFile << "RECEIVED DATA CHUNK" << " "
+						<< serverPtr->itemData.identifier
+						<< " " << "AT" << " "
+						<< clockInSecond
+						<< std::endl;
+				serverRecFile.close();
+
 				if (node->appData.appStats) {
 					if (!serverPtr->stats->IsSessionFinished()) {
 						serverPtr->stats->SessionFinish(node);
@@ -448,17 +478,23 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			} else {
 				AppDataUpClient* clientPtr;
 				char* item;
-				Int32 itemSize = 65536;
+				Int32 itemSize = 1024 * 1024;
 				Int32 fullSize;
 
 				clientPtr = AppUpClientUpdateUpClient(node, openResult);
 				assert(clientPtr != NULL);
 
-				// XXX: Should get item from daemon
-				item = AppUpClientNewDataItem(
-						itemSize,
-						fullSize,
-						openResult->connectionId);
+				if(clientPtr->dataChunk == NULL) {
+					item = AppUpClientNewDataItem(
+							itemSize,
+							fullSize,
+							0);
+				} else {
+					item = AppUpClientNewDataItem(
+							clientPtr->dataChunk->size * 1024,
+							fullSize,
+							clientPtr->dataChunk->identifier);
+				}
 				AppUpClientSendItem(node, clientPtr, item, fullSize);
 
 				pthread_mutex_lock(&clientPtr->packetListMutex);
@@ -477,10 +513,10 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			dataSent = (TransportToAppDataSent*)MESSAGE_ReturnInfo(msg);
 /*			printf("%s: UP client at %s sent data\n",
 				buf, node->hostname);*/
-			printf("UP client: %s at time %s sent data, packetSize=%d\n",
+/*			printf("UP client: %s at time %s sent data, packetSize=%d\n",
 					node->hostname,
 					buf,
-					dataSent->length);
+					dataSent->length);*/
 
 			clientPtr = AppUpClientGetUpClient(node, dataSent->connectionId);
 			assert(clientPtr != NULL);
@@ -993,6 +1029,12 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 		char* appName,
 		AppUpNodeType nodeType) {
 	AppDataUpClientDaemon* upClientDaemon;
+	int dataChunkId = 0;
+	int dataChunkSize = 0;
+	int dataChunkDeadline = 0;
+	float dataChunkPriority = 0.0;
+	char nodeConfigFileName[MAX_STRING_LENGTH];
+	int numValues;
 
 	// Allocate memory for data structure
 	upClientDaemon = (AppDataUpClientDaemon*)
@@ -1010,6 +1052,48 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 		upClientDaemon->applicationName = new std::string(appName);
 	} else {
 		upClientDaemon->applicationName = new std::string();
+	}
+
+	if(nodeType == APP_UP_NODE_MDC) {
+		numValues = sscanf(inputString,
+				"%*s %*s %*s %*s %s",
+				nodeConfigFileName);
+		if(numValues != 1) assert(false);
+		if(strcmp(nodeConfigFileName, "-") == 0) {
+			upClientDaemon->test = true;
+		} else upClientDaemon->test = false;
+
+		upClientDaemon->dataChunks = NULL;
+	}
+	else if(nodeType == APP_UP_NODE_DATA_SITE) {
+		numValues = sscanf(inputString,
+				"%*s %*s %*s %*s %d %d %d %f",
+				&dataChunkId,
+				&dataChunkSize,
+				&dataChunkDeadline,
+				&dataChunkPriority);
+		if(numValues != 4) assert(false);
+		upClientDaemon->test = false;
+
+		if(dataChunkId <= 0
+				|| dataChunkSize <= 0
+				|| dataChunkDeadline < 0
+				|| dataChunkPriority <= 0
+				|| dataChunkPriority > 1) {
+			printf("UP client daemon: "
+					"Ignored invalid data chunk specifications\n");
+			upClientDaemon->dataChunks = NULL;
+		} else {
+			upClientDaemon->dataChunks = (AppUpClientDaemonDataChunkStr*)
+					MEM_malloc(sizeof(AppUpClientDaemonDataChunkStr));
+			upClientDaemon->dataChunks->identifier = dataChunkId;
+			upClientDaemon->dataChunks->size = dataChunkSize;
+			upClientDaemon->dataChunks->deadline = dataChunkDeadline;
+			upClientDaemon->dataChunks->priority = dataChunkPriority;
+			upClientDaemon->dataChunks->next = NULL;
+		}
+	} else {
+		assert(false);
 	}
 
 	// Register
@@ -1145,14 +1229,38 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				destNodeId,
 				destAddrStr);*/
 
-		for(int j = 0; j < 1; ++j) {
+		CoordinateType distance;
+		int waitTime;
+
+		COORD_CalcDistance(CARTESIAN, &crds, dest, &distance);
+		waitTime = (int)((distance - APP_UP_WIRELESS_CLOSE_RANGE)
+					/ mobility->current->speed)
+				+ APP_UP_WIRELESS_WAIT_BEFORE_CONNECTION;
+		if(waitTime < 0) waitTime = 0;
+		printf("UP client daemon: %s will try to connect, waitTime=%d\n",
+					node->hostname,
+					waitTime);
+		if(clientDaemonPtr->test) {
 			AppUpClientInit(
 					node,
 					sourceAddr,
 					destAddr,
 					clientDaemonPtr->applicationName->c_str(),
 					sourceString,
-					clientDaemonPtr->nodeType);
+					clientDaemonPtr->nodeType,
+					waitTime,
+					NULL);
+		} else {
+			AppUpClientInit(
+					node,
+					sourceAddr,
+					destAddr,
+					clientDaemonPtr->applicationName->c_str(),
+					sourceString,
+					clientDaemonPtr->nodeType,
+					waitTime,
+					clientDaemonPtr->dataChunks);
+			clientDaemonPtr->dataChunks = clientDaemonPtr->dataChunks->next;
 		}
 		break; }
 	default:
