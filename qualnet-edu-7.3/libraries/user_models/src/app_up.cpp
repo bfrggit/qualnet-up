@@ -44,7 +44,7 @@ void AppUpServerInit(
 	char serverRecFileName[MAX_STRING_LENGTH];
 	ofstream serverRecFile;
 
-	sprintf(serverRecFileName, "rec_%s.out", node->hostname);
+	sprintf(serverRecFileName, "server_%s.out", node->hostname);
 	serverRecFile.open(serverRecFileName);
 	serverRecFile.close();
 
@@ -381,7 +381,7 @@ void AppLayerUpServer(Node *node, Message *msg) {
 				ofstream serverRecFile;
 				char clockInSecond[MAX_STRING_LENGTH];
 
-				sprintf(serverRecFileName, "rec_%s.out",
+				sprintf(serverRecFileName, "server_%s.out",
 						node->hostname);
 				serverRecFile.open(serverRecFileName, ios::app);
 				TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
@@ -1016,6 +1016,14 @@ void AppUpClientDaemonInit(
 			"new client\n", node->hostname);
 		assert(false);
 	}
+
+	char daemonRecFileName[MAX_STRING_LENGTH];
+	ofstream daemonRecFile;
+
+	sprintf(daemonRecFileName, "daemon_%s.out", node->hostname);
+	daemonRecFile.open(daemonRecFileName);
+	daemonRecFile.close();
+
 	printf("UP client daemon: Initialized at %s\n",
 			node->hostname);
 }
