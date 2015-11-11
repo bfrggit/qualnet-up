@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<root version="1.0">
+
+    <category name="Devices">
+        <subcategory name="Default" icon="default.png" tooltip="Default" categorytype="Devices" type="Default" propertytype="Device" />
+        <subcategory name="Switch" icon="switch.png" tooltip="Switch" categorytype="Devices" type="Switch" propertytype="Switch" />
+        <subcategory name="ATM" icon="atm.png" tooltip="ATM" categorytype="Devices" type="ATM" propertytype="ATM" />
+    </category>
+    <category name="UMTS Devices" addon="umts">
+        <subcategory categorytype="Devices" addon="umts" usermodel="UMTS-UE" tooltip="UMTS-UE" icon="UMTS-UE.png" type="DEVICE" name="UMTS-UE" propertytype="Device"/>
+        <subcategory categorytype="Devices" addon="umts" usermodel="UMTS-NodeB" tooltip="UMTS-NodeB" icon="UMTS-NodeB.png" type="DEVICE" name="UMTS-NodeB" propertytype="Device"/>
+        <subcategory categorytype="Devices" addon="umts" usermodel="UMTS-RNC" tooltip="UMTS-RNC" icon="UMTS-RNC.png" type="DEVICE" name="UMTS-RNC" propertytype="Device"/>
+        <subcategory categorytype="Devices" addon="umts" usermodel="UMTS-SGSN" tooltip="UMTS-SGSN" icon="UMTS-SGSN.png" type="DEVICE" name="UMTS-SGSN" propertytype="Device"/>
+        <subcategory categorytype="Devices" addon="umts" usermodel="UMTS-HLR" tooltip="UMTS-HLR" icon="UMTS-HLR.png" type="DEVICE" name="UMTS-HLR" propertytype="Device"/>
+        <subcategory categorytype="Devices" addon="umts" usermodel="UMTS-GGSN" tooltip="UMTS-GGSN" icon="UMTS-GGSN.png" type="DEVICE" name="UMTS-GGSN" propertytype="Device"/>
+    </category>
+    <category name="Network Components">
+        <subcategory name="Hierarchy" icon="hierarchy.png" tooltip="Hierarchy" categorytype="Network Components" type="Hierarchy" propertytype="Hierarchy" />
+        <subcategory name="Constrained Hierarchy" icon="HIERARCHY_constrained.png" tooltip="Constrained Hierarchy" categorytype="Network Components" type="ConstrainedHierarchy" propertytype="ConstrainedHierarchy" />
+        <subcategory name="Hub" icon="hub.png" tooltip="Hub" categorytype="Network Components" type="Hub" propertytype="WiredSubnet" />
+        <subcategory name="Wireless" icon="wireless.png" tooltip="Wireless Network" categorytype="Network Components" type="Wireless" propertytype="WirelessSubnet" />
+        <subcategory name="Satellite" icon="satcom_satellite_2D.png" tooltip="SATCOM Satellite Network" categorytype="Network Components" type="Satellite" propertytype="Satellite" />
+        <subcategory categorytype="Network Components" addon="wireless" usermodel="ANE-SATELLITE-SUBNET" tooltip="ANE-SATELLITE-SUBNET" icon="ANE_satellite_2D.png" type="WIRELESS-SUBNET" name="ANE-SATELLITE-SUBNET" propertytype="WirelessSubnet"/>
+        <subcategory categorytype="Network Components" addon="wireless" usermodel="BENTPIPE-SATELLITE-SUBNET" tooltip="BENTPIPE-SATELLITE-SUBNET" icon="bentpipe_satellite_2D.png" type="WIRELESS-SUBNET" name="BENTPIPE-SATELLITE-SUBNET" propertytype="WirelessSubnet"/>
+    </category>
+    <category name="Links">
+        <subcategory name="Link" icon="link.png" tooltip="Link" categorytype="Links" type="Link" propertytype="PtPLink" />
+        <subcategory name="BGPLink" icon="bgplink.png" tooltip="BGP Link" categorytype="Links" type="BGPLink" propertytype="BGPLink" />
+    </category>
+    <category name="Applications">
+        <subcategory name="CBR" icon="cbr_a.png" tooltip="Constant Bit Rate" categorytype="Applications" type="App" propertytype="CBR" />
+        <subcategory name="CELLULAR-ABSTRACT-APP" addon="cellular" icon="cellular_a.png" tooltip="Abstract Cellular Call" categorytype="Applications" type="App" propertytype="CELLULAR-ABSTRACT-APP" />
+        <subcategory name="Ftp" icon="ftp_a.png" tooltip="FTP" categorytype="Applications" type="App" propertytype="FTP" />
+        <subcategory name="Ftp-Generic" icon="ftp_gen_a.png" tooltip="Generic FTP" categorytype="Applications" type="App" propertytype="FTP/GENERIC" />
+        <subcategory name="GSM" addon="cellular" icon="gsm_a.png" tooltip="GSM Call" categorytype="Applications" type="App" propertytype="GSM" />
+        <subcategory name="Lookup" icon="lookup_a.png" tooltip="Lookup Traffic Generator" categorytype="Applications" type="App" propertytype="LOOKUP" />
+        <subcategory name="Super-App" icon="supr_app_a.png" tooltip="Super Application Traffic Generator" categorytype="Applications" type="App" propertytype="SUPER-APPLICATION" />
+        <subcategory name="Telnet" icon="telnet_a.png" tooltip="TELNET" categorytype="Applications" type="App" propertytype="TELNET" />
+        <subcategory name="THREADED-APP" icon="threaded_app_a.png" addon="military" tooltip="Threaded Application" categorytype="Applications" type="App" propertytype="THREADED-APP" />
+        <subcategory name="Traffic-Gen" icon="traf_gen_a.png" tooltip="Traffic Generator" categorytype="Applications" type="App" propertytype="TRAFFIC-GEN" />
+        <subcategory name="Traffic-Trace" icon="traf_trc_a.png" tooltip="Trace-based Traffic Generator" categorytype="Applications" type="App" propertytype="TRAFFIC-TRACE" />
+        <subcategory name="UMTS-CALL" icon="umts_a.png" addon="umts" tooltip="UMTS Call" categorytype="Applications" type="App" propertytype="UMTS-CALL" />
+        <subcategory name="VBR" icon="vbr_a.png" tooltip="Variable Bit Rate" categorytype="Applications" type="App" propertytype="VBR" />
+        <subcategory name="VoIP" icon="voip_a.png" tooltip="Voice over IP" categorytype="Applications" type="App" propertytype="VOIP" />
+        <subcategory name="ZIGBEEAPP" icon="zigbee_a.png" tooltip="Application for Zigbee GTS service" categorytype="Applications" type="App" propertytype="ZIGBEEAPP" />
+        <subcategory name="UP" icon="ftp_d.png" tooltip="Upload Planning" categorytype="Applications" type="App" propertytype="UP" />
+    </category>
+    <category name="Dynamic Address Applications">
+        <subcategory name="CBR" icon="cbr_d.png" tooltip="Constant Bit Rate (Dynamic Address Mode)" categorytype="Dynamic Address Applications" type="App" propertytype="CBR-DYNAMICADDRESS" />
+        <subcategory name="Ftp" icon="ftp_d.png" tooltip="FTP (Dynamic Address Mode)" categorytype="Dynamic Address Applications" type="App" propertytype="FTP-DYNAMICADDRESS" />
+        <subcategory name="Ftp-Generic" icon="ftp_gen_d.png" tooltip="Generic FTP (Dynamic Address Mode)" categorytype="Dynamic Address Applications" type="App" propertytype="FTP/GENERIC-DYNAMICADDRESS" />
+        <subcategory name="Super-App" icon="supr_app_d.png" tooltip="Super Application Traffic Generator (Dynamic Address Mode)" categorytype="Dynamic Address Applications" type="App" propertytype="SUPER-APPLICATION-DYNAMICADDRESS" />
+        <subcategory name="Telnet" icon="telnet_d.png" tooltip="TELNET (Dynamic Address Mode)" categorytype="Dynamic Address Applications" type="App" propertytype="TELNET-DYNAMICADDRESS" />
+        <subcategory name="Traffic-Gen" icon="traf_gen_d.png" tooltip="Traffic Generator (Dynamic Address Mode)" categorytype="Dynamic Address Applications" type="App" propertytype="TRAFFIC-GEN-DYNAMICADDRESS" />
+    </category>
+    <category name="Single Host Applications">
+        <subcategory name="HTTP" icon="http.png" tooltip="HTTP" categorytype="Single Host Applications" type="App" propertytype="HTTP-SINGLEHOST" />
+        <subcategory name="HTTPD" icon="httpd.png" tooltip="HTTPD" categorytype="Single Host Applications" type="App" propertytype="HTTPD-SINGLEHOST" />
+        <subcategory name="MCBR" icon="mcbr.png" tooltip="Multicast Constant Bit Rate" categorytype="Single Host Applications" type="App" propertytype="MCBR-SINGLEHOST" />
+        <subcategory name="MGEN" icon="mgen.png" addon="military" tooltip="Multi-Generator" categorytype="Single Host Applications" type="App" propertytype="MGEN-SINGLEHOST" />
+        <subcategory name="Super-App" icon="supr_app.png" tooltip="Super Application Traffic Generator (Multicast Mode)" categorytype="Single Host Applications" type="App" propertytype="SUPER-APPLICATION-SINGLEHOST" />
+        <subcategory name="Traffic-Gen" icon="traf_gen.png" tooltip="Traffic Generator (Multicast Mode)" categorytype="Single Host Applications" type="App" propertytype="TRAFFIC-GEN-SINGLEHOST" />
+        <subcategory name="Traffic-Trace" icon="traf_trc.png" tooltip="Traffic Trace (Multicast Mode)" categorytype="Single Host Applications" type="App" propertytype="TRAFFIC-TRACE-SINGLEHOST" />
+    </category>
+
+
+    <category name="Other Components">
+        <subcategory name="Weather" icon="weather.png" tooltip="Weather" categorytype="Other Components" type="Weather" propertytype="Weather" />
+        <subcategory name="Mobility" icon="mobility.png" tooltip="Mobility" categorytype="Other Components" type="Mobility" propertytype="Mobility" />
+        <subcategory name="Annotation" icon="note.png" tooltip="Note" categorytype="Other Components" type="Annotation" propertytype="Annotation" />
+    </category>
+
+</root>

@@ -14,3 +14,5 @@ include/application.h
 include/api.h
 include/trace.h
 include/mac.h
+gui/settings/components/up.cmp
+gui/settings/Toolsets/Standard.xml

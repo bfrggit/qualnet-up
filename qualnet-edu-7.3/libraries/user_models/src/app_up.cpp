@@ -1364,7 +1364,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		char destAddrStr[MAX_STRING_LENGTH];
 
 		sscanf(clientDaemonPtr->inputString->c_str(),
-				"%*s %*s %s %s",
+				"%*s %s %s",
 				sourceString,
 				destString);
 		IO_AppParseSourceAndDestStrings(
@@ -1518,7 +1518,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 			char destAddrStr[MAX_STRING_LENGTH];
 
 			sscanf(clientDaemonPtr->inputString->c_str(),
-					"%*s %*s %s %s",
+					"%*s %s %s",
 					sourceString,
 					destString);
 			IO_AppParseSourceAndDestStrings(

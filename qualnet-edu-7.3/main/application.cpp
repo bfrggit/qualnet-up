@@ -3321,18 +3321,19 @@ APP_InitializeApplications(
                 char dataChunkPriorityString[MAX_STRING_LENGTH];
 
                 numValues = sscanf(appInput.inputStrings[i],
-						"%*s %s %s",
-						nodeTypeString,
-						sourceString);
+						"%*s %s %s %s",
+						sourceString,
+						destString,
+						nodeTypeString);
 
                 // Check integraty before parsing parameters
 				switch (numValues) {
-					case 2: break;
+					case 3: break;
 					default: {
 						char errorString[MAX_STRING_LENGTH];
 						sprintf(errorString,
 								"Wrong UP configuration format!\n"
-								"UP <type> <node> ...\n");
+								"UP <source> <dest> <type> ...\n");
 						ERROR_ReportError(errorString);
 					}
 				}
@@ -3343,21 +3344,19 @@ APP_InitializeApplications(
 				} else if (strcmp(nodeTypeString, "MDC") == 0) {
 					nodeType = APP_UP_NODE_MDC;
 					numValues += sscanf(appInput.inputStrings[i],
-							"%*s %*s %*s %s %s",
-							destString,
+							"%*s %*s %*s %*s %s",
 							nodeConfigFileName);
 					if (numValues != 4) {
 						char errorString[MAX_STRING_LENGTH];
 						sprintf(errorString,
 								"Wrong UP configuration format!\n"
-								"UP MDC <source> <dest> <config>\n");
+								"UP <source> <dest> MDC <config>\n");
 						ERROR_ReportError(errorString);
 					}
 				} else if (strcmp(nodeTypeString, "DATA") == 0) {
 					nodeType = APP_UP_NODE_DATA_SITE;
 					numValues += sscanf(appInput.inputStrings[i],
-							"%*s %*s %*s %s %s %s %s %s",
-							destString,
+							"%*s %*s %*s %*s %s %s %s %s",
 							dataChunkIdString,
 							dataChunkSizeString,
 							dataChunkDeadlineString,
@@ -3366,7 +3365,7 @@ APP_InitializeApplications(
 						char errorString[MAX_STRING_LENGTH];
 						sprintf(errorString,
 								"Wrong UP configuration format!\n"
-								"UP DATA <source> <dest> "
+								"UP <source> <dest> DATA "
 								"<id> <size> <deadline> <priority>\n");
 						ERROR_ReportError(errorString);
 					}
@@ -3380,14 +3379,23 @@ APP_InitializeApplications(
 
                 // Parse addresses with respect to node type
                 // Initialize client and/or server instances
+				IO_AppParseSourceAndDestStrings(
+					firstNode,
+					appInput.inputStrings[i],
+					sourceString,
+					&sourceNodeId,
+					&sourceAddr,
+					destString,
+					&destNodeId,
+					&destAddr);
                 switch (nodeType) {
                 case APP_UP_NODE_CLOUD: {
-                	IO_AppParseDestString(
+/*                	IO_AppParseDestString(
                 		firstNode,
 						appInput.inputStrings[i],
 						sourceString,
 						&sourceNodeId,
-						&sourceAddr);
+						&sourceAddr);*/
                 	node = MAPPING_GetNodePtrFromHash(nodeHash, sourceNodeId);
 					if (node != NULL) {
 #ifdef DEBUG
@@ -3405,15 +3413,6 @@ APP_InitializeApplications(
 					}
                 	break; }
                 case APP_UP_NODE_MDC: {
-                	IO_AppParseSourceAndDestStrings(
-						firstNode,
-						appInput.inputStrings[i],
-						sourceString,
-						&sourceNodeId,
-						&sourceAddr,
-						destString,
-						&destNodeId,
-						&destAddr);
                 	node = MAPPING_GetNodePtrFromHash(nodeHash, sourceNodeId);
 					if (node != NULL) {
 #ifdef DEBUG
@@ -3446,15 +3445,6 @@ APP_InitializeApplications(
 					}
                 	break; }
                 case APP_UP_NODE_DATA_SITE: {
-                	IO_AppParseSourceAndDestStrings(
-						firstNode,
-						appInput.inputStrings[i],
-						sourceString,
-						&sourceNodeId,
-						&sourceAddr,
-						destString,
-						&destNodeId,
-						&destAddr);
                 	node = MAPPING_GetNodePtrFromHash(nodeHash, sourceNodeId);
 					if (node != NULL) {
 #ifdef DEBUG
