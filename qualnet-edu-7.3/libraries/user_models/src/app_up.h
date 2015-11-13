@@ -90,6 +90,7 @@ typedef struct struct_app_up_client_daemon_str {
 	bool        test;
 	int         joinedId;
 	map<int, int>* plan;
+	int         connAttempted;
 } AppDataUpClientDaemon;
 
 void AppUpServerInit(
@@ -189,7 +190,8 @@ AppDataUpClientDaemon* AppUpClientGetUpClientDaemon(Node *node);
 
 const float APP_UP_WIRELESS_CLOSE_RANGE = 0.0;
 const int APP_UP_WIRELESS_AP_WAIT_TIME = 5;
-const int APP_UP_WIRELESS_MDC_WAIT_TIME = 4;
+const int APP_UP_WIRELESS_MDC_WAIT_TIME = 5;
+const int APP_UP_OPEN_CONN_ATTEMPT_MAX = 5;
 
 int AppUpClientDaemonGetNextDataChunk(AppDataUpClientDaemon* clientDaemonPtr);
 void AppUpClientDaemonSendNextDataChunk(

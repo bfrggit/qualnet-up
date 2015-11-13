@@ -10,6 +10,9 @@ libraries/user_models/src/app_hello.h
 libraries/user_models/src/app_up.cpp
 libraries/user_models/src/app_hello.cpp
 libraries/user_models/CMakeLists.txt
+libraries/developer/src/transport_tcp_timer.cpp
+libraries/developer/src/transport_tcp_usrreq.cpp
+libraries/developer/src/transport_tcp_subr.cpp
 include/application.h
 include/api.h
 include/trace.h
