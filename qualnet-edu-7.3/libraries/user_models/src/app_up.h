@@ -191,7 +191,7 @@ AppDataUpClientDaemon* AppUpClientGetUpClientDaemon(Node *node);
 const float APP_UP_WIRELESS_CLOSE_RANGE = 0.0;
 const int APP_UP_WIRELESS_AP_WAIT_TIME = 5;
 const int APP_UP_WIRELESS_MDC_WAIT_TIME = 5;
-const int APP_UP_OPEN_CONN_ATTEMPT_MAX = 5;
+const int APP_UP_OPEN_CONN_ATTEMPT_MAX = 15;
 
 int AppUpClientDaemonGetNextDataChunk(AppDataUpClientDaemon* clientDaemonPtr);
 void AppUpClientDaemonSendNextDataChunk(
