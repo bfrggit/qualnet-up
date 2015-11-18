@@ -680,7 +680,7 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			TransportToAppCloseResult *closeResult;
 
 			closeResult = (TransportToAppCloseResult*)MESSAGE_ReturnInfo(msg);
-			if(closeResult->type == TCP_CONN_PASSIVE_CLOSE) {
+/*			if(closeResult->type == TCP_CONN_PASSIVE_CLOSE) {
 				printf("UP client: %s at time %s passively closed, "
 						"connectionId=%d\n",
 						node->hostname,
@@ -692,7 +692,7 @@ void AppLayerUpClient(Node *node, Message *msg) {
 						node->hostname,
 						buf,
 						closeResult->connectionId);
-			}
+			}*/
 
 			clientPtr = AppUpClientGetUpClient(node,
 					closeResult->connectionId);
@@ -750,7 +750,7 @@ void AppUpClientFinalize(Node *node, AppInfo *appInfo) {
 	AppDataUpClient *clientPtr = (AppDataUpClient*)appInfo->appDetail;
 	char addrStr[MAX_STRING_LENGTH];
 
-	printf("UP client: Finalized at %s\n", node->hostname);
+//	printf("UP client: Finalized at %s\n", node->hostname);
 
 //	TODO: Statistics
 	if(node->appData.appStats) {
