@@ -352,33 +352,52 @@ void AppLayerUpServer(Node *node, Message *msg) {
 
 				serverPtr->itemData.sizeExpected = header->itemSize;
 				serverPtr->itemData.dataChunk = header->dataChunk;
-				if(packet[packetSize - 1] == '$') {
+
+				// Changed for virtual packets
+/*				if(packet[packetSize - 1] == '$') {
 					capSize = sizeof(AppUpMessageHeader) + 2;
 				} else {
 					capSize = sizeof(AppUpMessageHeader) + 1;
-				}
+				}*/
+
+				capSize = sizeof(AppUpMessageHeader) + 2;
 				serverPtr->itemData.sizeReceived += packetSize - capSize;
 				printf("UP server: %s received data, "
 						"id=%d itemSizeExpected=%d\n",
 						node->hostname,
 						serverPtr->itemData.dataChunk.identifier,
 						serverPtr->itemData.sizeExpected);
-			} else if(packet[packetSize - 1] == '$') {
+			} /*else if(packet[packetSize - 1] == '$') {
+				// Removed for virtual packets
+			}*/ else {
+				serverPtr->itemData.sizeReceived += packetSize;
+			}
+			break;
+		case MSG_APP_FromTransCloseResult: {
+			TransportToAppCloseResult *closeResult;
+
+			closeResult = (TransportToAppCloseResult*)MESSAGE_ReturnInfo(msg);
+/*			printf("%s: UP server at %s got close result\n",
+					buf, node->hostname);*/
+
+			serverPtr = AppUpServerGetUpServer(node,
+					closeResult->connectionId);
+			assert(serverPtr != NULL);
+
+			if(closeResult->type == TCP_CONN_PASSIVE_CLOSE) {
+				printf("UP server: %s passively closed, "
+						"connectionId=%d\n",
+						node->hostname,
+						closeResult->connectionId);
+
 				AppUpServerItemData* itemData;
 
 				itemData = &serverPtr->itemData;
-				itemData->sizeReceived += packetSize - 1;
 				printf("UP server: %s received data, "
 						"id=%d itemSizeReceived=%d\n",
 						node->hostname,
 						itemData->dataChunk.identifier,
 						itemData->sizeReceived);
-				node->appData.appTrafficSender->appTcpCloseConnection(
-						node,
-						serverPtr->connectionId);
-				printf("UP server: %s disconnecting, connectionId=%d\n",
-						node->hostname,
-						serverPtr->connectionId);
 
 				char serverRecFileName[MAX_STRING_LENGTH];
 				ofstream serverRecFile;
@@ -411,10 +430,6 @@ void AppLayerUpServer(Node *node, Message *msg) {
 					int packetSize = sizeof(AppUpClientDaemonDataChunkStr);
 					int chunkIdentifier;
 
-/*					if(serverPtr->itemData.dataChunk.identifier > 0) {
-						chunkIdentifier =
-								serverPtr->itemData.dataChunk.identifier;
-					} else chunkIdentifier = 0;*/
 					chunkIdentifier = itemData->dataChunk.identifier;
 
 					msg = MESSAGE_Alloc(node,
@@ -444,31 +459,13 @@ void AppLayerUpServer(Node *node, Message *msg) {
 					}
 				}
 			} else {
-				serverPtr->itemData.sizeReceived += packetSize;
-			}
-			break;
-		case MSG_APP_FromTransCloseResult:
-			TransportToAppCloseResult *closeResult;
-
-			closeResult = (TransportToAppCloseResult*)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP server at %s got close result\n",
-					buf, node->hostname);*/
-			if(closeResult->type == TCP_CONN_PASSIVE_CLOSE) {
-				printf("UP server: %s passively closed, "
-						"connectionId=%d\n",
-						node->hostname,
-						closeResult->connectionId);
-			} else {
 				printf("UP server: %s actively closed, "
 						"connectionId=%d\n",
 						node->hostname,
 						closeResult->connectionId);
 			}
 
-			serverPtr = AppUpServerGetUpServer(node,
-					closeResult->connectionId);
-			assert(serverPtr != NULL);
-
+			// Original handler
 			if (node->appData.appStats) {
 				if (!serverPtr->stats->IsSessionFinished()) {
 					serverPtr->stats->SessionFinish(node);
@@ -478,7 +475,7 @@ void AppLayerUpServer(Node *node, Message *msg) {
 				serverPtr->sessionIsClosed = true;
 				serverPtr->sessionFinish = node->getNodeTime();
 			}
-			break;
+			break; }
 		case MSG_APP_TimerExpired:
 			printf("%s: UP server at %s timer expired\n",
 				buf, node->hostname);
@@ -565,24 +562,34 @@ void AppLayerUpClient(Node *node, Message *msg) {
 				assert(clientPtr != NULL);
 
 				if(clientPtr->dataChunk == NULL) {
-					item = AppUpClientNewDataItem(itemSize, fullSize, 0, 0, 0.);
+					// Changed for virtual packets
+//					item = AppUpClientNewDataItem(
+					item = AppUpClientNewVirtualDataItem(
+							itemSize, fullSize, 0, 0, 0.);
 				} else {
-					item = AppUpClientNewDataItem(
+					// Changed for virtual packets
+//					item = AppUpClientNewDataItem(
+					item = AppUpClientNewVirtualDataItem(
 							clientPtr->dataChunk->size * 1024,
 							fullSize,
 							clientPtr->dataChunk->identifier,
 							clientPtr->dataChunk->deadline,
 							clientPtr->dataChunk->priority);
 				}
-				AppUpClientSendItem(node, clientPtr, item, fullSize);
+				// Changed for virtual packets
+//				AppUpClientSendItem(
+				AppUpClientSendVirtualItem(
+						node, clientPtr, item, fullSize);
 
-				pthread_mutex_lock(&clientPtr->packetListMutex);
+				// Removed for virtual packets
+/*				pthread_mutex_lock(&clientPtr->packetListMutex);
 				if(clientPtr->packetList) {
 					AppUpClientSendNextPacket(node, clientPtr);
 				} else {
 					assert(false);
 				}
-				pthread_mutex_unlock(&clientPtr->packetListMutex);
+				pthread_mutex_unlock(&clientPtr->packetListMutex);*/
+
 				MEM_free(item);
 			}
 			break;
@@ -1022,6 +1029,74 @@ void AppUpClientSendItem(
 	/*
 	 * Developer should remember to free memory of item in caller
 	 */
+}
+
+char* AppUpClientNewVirtualDataItem(
+		Int32 itemSize,
+		Int32& fullSize,
+		int identifier,
+		int deadline,
+		float priority) {
+	char* item;
+	AppUpMessageHeader* header;
+
+	fullSize = itemSize + sizeof(AppUpMessageHeader) + 2;
+	item = (char*)MEM_malloc(sizeof(AppUpMessageHeader) + 2);
+	memset(item, 0, sizeof(AppUpMessageHeader) + 2);
+	item[0] = '^';
+	item[sizeof(AppUpMessageHeader) + 2 - 1] = '$';
+	header = (AppUpMessageHeader*)(item + 1);
+	header->type = APP_UP_MSG_DATA;
+	header->itemSize = itemSize;
+	header->dataChunk.identifier = identifier;
+	header->dataChunk.size = itemSize / 1024;
+	header->dataChunk.deadline = deadline;
+	header->dataChunk.priority = priority;
+	header->dataChunk.next = NULL;
+	return item;
+}
+
+void AppUpClientSendVirtualItem(
+		Node* node,
+		AppDataUpClient *clientPtr,
+		char* item,
+		Int32 itemSize) {
+	char buf[MAX_STRING_LENGTH];
+	Int32 packetSize = sizeof(AppUpMessageHeader) + 2;
+
+	ctoa(node->getNodeTime(), buf);
+	if(clientPtr->sessionIsClosed) {
+		printf("%s: UP client at %s attempted invalid operation\n",
+				buf,
+				node->hostname);
+		return;
+	}
+
+	Message *msg = APP_TcpCreateMessage(
+		node,
+		clientPtr->connectionId,
+		TRACE_UP);
+
+	APP_AddPayload(node, msg, item, packetSize);
+	APP_AddVirtualPayload(node, msg, itemSize - packetSize);
+	node->appData.appTrafficSender->appTcpSend(node, msg);
+
+//	TODO: Statistics
+	if (node->appData.appStats)
+	{
+		;
+	}
+
+	if(clientPtr->packetList == NULL) {
+		clientPtr->sessionIsClosed = true;
+		clientPtr->sessionFinish = node->getNodeTime();
+
+		// TODO: Statistics
+		if (node->appData.appStats)
+		{
+			;
+		}
+	}
 }
 
 /*
@@ -1637,6 +1712,17 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				*chunkIdentifier,
 				clientDaemonPtr->connAttempted);
 
+		map<int, int>* plan = clientDaemonPtr->plan;
+		int joinedId = clientDaemonPtr->joinedId;
+
+		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC
+				&& (joinedId < 0
+						|| (*chunkIdentifier > 0
+								&& plan->count(*chunkIdentifier) > 0
+								&& plan->at(*chunkIdentifier) != joinedId))) {
+			// No longer at the correct AP
+			;
+		} else
 		if(clientDaemonPtr->connAttempted < APP_UP_OPEN_CONN_ATTEMPT_MAX) {
 			// Application-layer reconnection handler
 			// Will start a new client application instance
@@ -1702,9 +1788,14 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 						NULL);
 			}
 			daemonRecFile.open(daemonRecFileName, ios::app);
-			daemonRecFile << "MDC" << " "
+			if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
+				daemonRecFile << "MDC";
+			} else {
+				daemonRecFile << "DATA";
+			}
+			daemonRecFile << " "
 					<< node->hostname
-					<< " " << "PREP DATA" << " "
+					<< " " << "REPR DATA" << " "
 					<< *chunkIdentifier
 					<< " " << "AT TIME" << " "
 					<< clockInSecond
@@ -1778,7 +1869,8 @@ int AppUpClientDaemonGetNextDataChunk(AppDataUpClientDaemon* clientDaemonPtr) {
 	if(joinedId < 1) return chunkId; // -1
 	chunk = clientDaemonPtr->dataChunks;
 	while(chunk) {
-		if(plan->at(chunk->identifier) == joinedId) {
+		if(plan->count(chunk->identifier) > 0
+		&& plan->at(chunk->identifier) == joinedId) {
 			if(chunkId < 0 || chunkPriority < chunk->priority) {
 				chunkId = chunk->identifier;
 				chunkPriority = chunk->priority;

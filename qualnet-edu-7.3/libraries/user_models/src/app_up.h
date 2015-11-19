@@ -153,6 +153,20 @@ void AppUpClientSendItem(
 		char* item,
 		Int32 itemSize);
 
+char* AppUpClientNewVirtualDataItem(
+		Int32 itemSize,
+		Int32& fullSize,
+		int identifier,
+		int deadline,
+		float priority);
+
+void AppUpClientSendVirtualItem(
+		Node* node,
+		AppDataUpClient *clientPtr,
+		char* item,
+		Int32 itemSize);
+
+
 AppDataUpClient*
 AppUpClientUpdateUpClient(
 		Node *node,
