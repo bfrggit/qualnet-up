@@ -117,9 +117,9 @@ void AppUpClientInit(
 			node->partitionData->partitionId);*/
 
 	// Open connection
-	char waitTimeStr[MAX_STRING_LENGTH];
+/*	char waitTimeStr[MAX_STRING_LENGTH];
 
-	sprintf(waitTimeStr, "%d", waitTime);
+	sprintf(waitTimeStr, "%d", waitTime);*/
 	node->appData.appTrafficSender->appTcpOpenConnection(
 		node,
 		APP_UP_CLIENT,
@@ -131,7 +131,7 @@ void AppUpClientInit(
 		APP_DEFAULT_TOS,
 		ANY_INTERFACE,
 		std::string(),
-		TIME_ConvertToClock(waitTimeStr),
+		waitTime * SECOND,
 		clientPtr->destNodeId,
 		clientPtr->clientInterfaceIndex,
 		clientPtr->destInterfaceIndex);
@@ -231,9 +231,9 @@ AppDataUpClient* AppUpClientNewUpClient(
 	upClient->connectionId = -1;
 	upClient->uniqueId = node->appData.uniqueId++;
 	upClient->nodeType = nodeType;
-	upClient->packetList = NULL;
-//	upClient->packetListMutex = PTHREAD_MUTEX_INITIALIZER;
-	memcpy(&upClient->packetListMutex, &mutexInit, sizeof(mutexInit));
+	upClient->packets = NULL;
+//	upClient->packetsMutex = PTHREAD_MUTEX_INITIALIZER;
+	memcpy(&upClient->packetsMutex, &mutexInit, sizeof(mutexInit));
 
 	upClient->sessionIsClosed = true;
 	upClient->sessionStart = node->getNodeTime();
@@ -257,10 +257,12 @@ AppDataUpClient* AppUpClientNewUpClient(
 }
 
 void AppLayerUpServer(Node *node, Message *msg) {
-	char buf[MAX_STRING_LENGTH];
+//	char buf[MAX_STRING_LENGTH];
+	char clockInSecond[MAX_STRING_LENGTH];
 	AppDataUpServer *serverPtr;
 
-	ctoa(node->getNodeTime(), buf);
+//	ctoa(node->getNodeTime(), buf);
+	TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 /*	printf("UP server: %s at time %s processed an event\n",
 		node->hostname,
 		buf);*/
@@ -270,12 +272,9 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			TransportToAppListenResult *listenResult;
 
 			listenResult = (TransportToAppListenResult*)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP server at %s got listen result\n",
-				buf, node->hostname);*/
-
 			if(listenResult->connectionId < 0) {
 				printf("%s: UP server at %s listen failed\n",
-					buf,
+					clockInSecond,
 					node->hostname);
 				node->appData.numAppTcpFailure ++;
 			} else {
@@ -291,13 +290,11 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			TransportToAppOpenResult *openResult;
 
 			openResult = (TransportToAppOpenResult *)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP server at %s got open result\n",
-				buf, node->hostname);*/
 			assert(openResult->type == TCP_CONN_PASSIVE_OPEN);
 
 			if(openResult->connectionId < 0) {
 				printf("%s: UP server at %s connection failed\n",
-					buf,
+					clockInSecond,
 					node->hostname);
 				node->appData.numAppTcpFailure ++;
 			} else {
@@ -312,23 +309,21 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			TransportToAppDataSent* dataSent;
 
 			dataSent = (TransportToAppDataSent*)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP server at %s sent data\n",
-				buf, node->hostname);*/
 			printf("UP server: %s sent data, packetSize=%d\n",
 					node->hostname,
 					dataSent->length);
 			break;
-		case MSG_APP_FromTransDataReceived:
+		case MSG_APP_FromTransDataReceived: {
 			TransportToAppDataReceived* dataReceived;
 			char *packet;
 			int packetSize;
+			int packetSizeVirtual;
 
 			dataReceived = (TransportToAppDataReceived*)MESSAGE_ReturnInfo(msg);
 			packet = MESSAGE_ReturnPacket(msg);
 			packetSize = MESSAGE_ReturnPacketSize(msg);
+			packetSizeVirtual = MESSAGE_ReturnVirtualPacketSize(msg);
 
-/*			printf("%s: UP server at %s received data\n",
-				buf, node->hostname);*/
 /*			printf("UP server: %s received data, "
 					"connectionId=%d packetSize=%d\n",
 					node->hostname,
@@ -341,12 +336,12 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			if(serverPtr == NULL) break;
 			assert(serverPtr->sessionIsClosed == false);
 
-			// TODO: Statistics
+			// Statistics
 			if (node->appData.appStats) {
 				;
 			}
 
-			if(packet[0] == '^') {
+			if(packetSize - packetSizeVirtual > 0 && packet[0] == '^') {
 				AppUpMessageHeader* header = (AppUpMessageHeader*)(packet + 1);
 				Int32 capSize;
 
@@ -363,26 +358,48 @@ void AppLayerUpServer(Node *node, Message *msg) {
 				capSize = sizeof(AppUpMessageHeader) + 2;
 				serverPtr->itemData.sizeReceived += packetSize - capSize;
 				printf("UP server: %s received data, "
-						"id=%d itemSizeExpected=%d\n",
+						"identifier=%d itemSizeExpected=%d\n",
 						node->hostname,
 						serverPtr->itemData.dataChunk.identifier,
 						serverPtr->itemData.sizeExpected);
+
+				if(serverPtr->nodeType == APP_UP_NODE_MDC) {
+					Message* msg;
+					ActionData acnData;
+					int chunkIdentifier;
+
+					chunkIdentifier = serverPtr->itemData.dataChunk.identifier;
+
+					msg = MESSAGE_Alloc(node,
+							APP_LAYER,
+							APP_UP_CLIENT_DAEMON /*APP_UP_CLIENT*/,
+							MSG_APP_UP_DataChunkHeaderReceived);
+					MESSAGE_InfoAlloc(node, msg, sizeof(int));
+					memcpy(MESSAGE_ReturnInfo(msg),
+							&chunkIdentifier,
+							sizeof(int));
+
+					//Trace Information
+					acnData.actionType = SEND;
+					acnData.actionComment = NO_COMMENT;
+					TRACE_PrintTrace(node, msg, TRACE_APPLICATION_LAYER,
+							PACKET_OUT, &acnData);
+					MESSAGE_Send(node, msg, (clocktype)0);
+				}
 			} /*else if(packet[packetSize - 1] == '$') {
 				// Removed for virtual packets
 			}*/ else {
 				serverPtr->itemData.sizeReceived += packetSize;
 			}
-			break;
+			break; }
 		case MSG_APP_FromTransCloseResult: {
 			TransportToAppCloseResult *closeResult;
 
 			closeResult = (TransportToAppCloseResult*)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP server at %s got close result\n",
-					buf, node->hostname);*/
-
 			serverPtr = AppUpServerGetUpServer(node,
 					closeResult->connectionId);
 			assert(serverPtr != NULL);
+			if(serverPtr->sessionIsClosed) break;
 
 			if(closeResult->type == TCP_CONN_PASSIVE_CLOSE) {
 				printf("UP server: %s passively closed, "
@@ -394,19 +411,18 @@ void AppLayerUpServer(Node *node, Message *msg) {
 
 				itemData = &serverPtr->itemData;
 				printf("UP server: %s received data, "
-						"id=%d itemSizeReceived=%d\n",
+						"identifier=%d itemSizeReceived=%d\n",
 						node->hostname,
 						itemData->dataChunk.identifier,
 						itemData->sizeReceived);
 
 				char serverRecFileName[MAX_STRING_LENGTH];
 				ofstream serverRecFile;
-				char clockInSecond[MAX_STRING_LENGTH];
 
 				sprintf(serverRecFileName, "server_%s.out",
 						node->hostname);
 				serverRecFile.open(serverRecFileName, ios::app);
-				TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+//				TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 				if(serverPtr->nodeType == APP_UP_NODE_MDC) {
 					serverRecFile << "MDC";
 				} else if (serverPtr->nodeType == APP_UP_NODE_CLOUD) {
@@ -450,7 +466,7 @@ void AppLayerUpServer(Node *node, Message *msg) {
 					acnData.actionComment = NO_COMMENT;
 					TRACE_PrintTrace(node, msg, TRACE_APPLICATION_LAYER,
 							PACKET_OUT, &acnData);
-					MESSAGE_Send(node, msg, TIME_ConvertToClock("0"));
+					MESSAGE_Send(node, msg, (clocktype)0);
 				}
 
 				if (node->appData.appStats) {
@@ -477,46 +493,41 @@ void AppLayerUpServer(Node *node, Message *msg) {
 			}
 			break; }
 		case MSG_APP_TimerExpired:
-			printf("%s: UP server at %s timer expired\n",
-				buf, node->hostname);
+			printf("UP server: %s at time %s timer expired\n",
+					node->hostname, clockInSecond);
 			break;
 		case MSG_APP_UP: // General message
 			printf("UP server: %s at time %s received message\n",
-					node->hostname,
-					buf);
+					node->hostname, clockInSecond);
 			break;
-		default:
+		default: {
 			printf("UP server: %s at time %s received "\
 				"message of unknown type %d\n",
-				node->hostname,
-				buf,
-				msg->eventType);
+				node->hostname, clockInSecond, msg->eventType);
+		}
 	}
 	MESSAGE_Free(node, msg);
 }
 
 void AppLayerUpClient(Node *node, Message *msg) {
-	char buf[MAX_STRING_LENGTH];
+//	char buf[MAX_STRING_LENGTH];
+	char clockInSecond[MAX_STRING_LENGTH];
 	AppDataUpClient* clientPtr;
 
-	ctoa(node->getNodeTime(), buf);
+//	ctoa(node->getNodeTime(), buf);
+	TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 /*	printf("UP client: %s at time %s processed an event\n",
 		node->hostname,
 		buf);*/
 
 	switch(msg->eventType) {
-		case MSG_APP_FromTransOpenResult:
+		case MSG_APP_FromTransOpenResult: {
 			TransportToAppOpenResult *openResult;
 
 			openResult = (TransportToAppOpenResult *)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP client at %s got open result\n",
-				buf, node->hostname);*/
 			assert(openResult->type == TCP_CONN_ACTIVE_OPEN);
 
 			if(openResult->connectionId < 0) { // Connection failed
-/*				printf("%s: UP client at %s connection failed\n",
-					buf,
-					node->hostname);*/
 				node->appData.numAppTcpFailure ++;
 
 				clientPtr = AppUpClientGetClientPtr(node, openResult->uniqueId);
@@ -551,7 +562,7 @@ void AppLayerUpClient(Node *node, Message *msg) {
 				acnData.actionComment = NO_COMMENT;
 				TRACE_PrintTrace(node, msg, TRACE_APPLICATION_LAYER,
 						PACKET_OUT, &acnData);
-				MESSAGE_Send(node, msg, TIME_ConvertToClock("0"));
+				MESSAGE_Send(node, msg, (clocktype)0);
 			} else { // Connection successful
 				AppDataUpClient* clientPtr;
 				char* item;
@@ -582,23 +593,21 @@ void AppLayerUpClient(Node *node, Message *msg) {
 						node, clientPtr, item, fullSize);
 
 				// Removed for virtual packets
-/*				pthread_mutex_lock(&clientPtr->packetListMutex);
-				if(clientPtr->packetList) {
+/*				pthread_mutex_lock(&clientPtr->packetsMutex);
+				if(clientPtr->packets) {
 					AppUpClientSendNextPacket(node, clientPtr);
 				} else {
 					assert(false);
 				}
-				pthread_mutex_unlock(&clientPtr->packetListMutex);*/
+				pthread_mutex_unlock(&clientPtr->packetsMutex);*/
 
 				MEM_free(item);
 			}
-			break;
-		case MSG_APP_FromTransDataSent:
+			break; }
+		case MSG_APP_FromTransDataSent: {
 			TransportToAppDataSent* dataSent;
 
 			dataSent = (TransportToAppDataSent*)MESSAGE_ReturnInfo(msg);
-/*			printf("%s: UP client at %s sent data\n",
-				buf, node->hostname);*/
 /*			printf("UP client: %s at time %s sent data, packetSize=%d\n",
 					node->hostname,
 					buf,
@@ -607,10 +616,11 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			clientPtr = AppUpClientGetUpClient(node, dataSent->connectionId);
 			assert(clientPtr != NULL);
 
-			pthread_mutex_lock(&clientPtr->packetListMutex);
-			if(clientPtr->packetList) {
+			pthread_mutex_lock(&clientPtr->packetsMutex);
+			// Removed for virtual packets
+/*			if(clientPtr->packets) {
 				AppUpClientSendNextPacket(node, clientPtr);
-			} else if(clientPtr->sessionIsClosed) {
+			} else*/ if(clientPtr->sessionIsClosed) {
 				node->appData.appTrafficSender->appTcpCloseConnection(
 						node,
 						clientPtr->connectionId);
@@ -647,7 +657,7 @@ void AppLayerUpClient(Node *node, Message *msg) {
 				acnData.actionComment = NO_COMMENT;
 				TRACE_PrintTrace(node, msg, TRACE_APPLICATION_LAYER,
 						PACKET_OUT, &acnData);
-				MESSAGE_Send(node, msg, TIME_ConvertToClock("0"));
+				MESSAGE_Send(node, msg, (clocktype)0);
 
 				if (node->appData.appStats) {
 					if (!clientPtr->stats->IsSessionFinished()) {
@@ -655,8 +665,8 @@ void AppLayerUpClient(Node *node, Message *msg) {
 					}
 				}
 			}
-			pthread_mutex_unlock(&clientPtr->packetListMutex);
-			break;
+			pthread_mutex_unlock(&clientPtr->packetsMutex);
+			break; }
 		case MSG_APP_FromTransDataReceived:
 			TransportToAppDataReceived* dataReceived;
 			char *packet;
@@ -666,8 +676,6 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			packet = MESSAGE_ReturnPacket(msg);
 			packetSize = MESSAGE_ReturnPacketSize(msg);
 
-/*			printf("%s: UP client at %s received data\n",
-				buf, node->hostname);*/
 			printf("UP client: %s received data, "
 					"connectionId=%d packetSize=%d\n",
 					node->hostname,
@@ -678,12 +686,12 @@ void AppLayerUpClient(Node *node, Message *msg) {
 					dataReceived->connectionId);
 			assert(clientPtr != NULL);
 
-			// TODO: Statistics
+			// Statistics
 			if (node->appData.appStats) {
 				;
 			}
 			break;
-		case MSG_APP_FromTransCloseResult:
+		case MSG_APP_FromTransCloseResult: {
 			TransportToAppCloseResult *closeResult;
 
 			closeResult = (TransportToAppCloseResult*)MESSAGE_ReturnInfo(msg);
@@ -714,29 +722,19 @@ void AppLayerUpClient(Node *node, Message *msg) {
 				clientPtr->sessionIsClosed = true;
 				clientPtr->sessionFinish = node->getNodeTime();
 			}
-			break;
+			break; }
 		case MSG_APP_UP: // General message
 			printf("UP client: %s at time %s received message\n",
 					node->hostname,
-					buf);
+					clockInSecond);
 			break;
-/*		case MSG_APP_UP_FromMacJoinCompleted:
-			MacDataDot11* macData;
-			char macAdder[24];
-
-			macData = (MacDataDot11*)MESSAGE_ReturnPacket(msg);
-			MacDot11MacAddressToStr(macAdder, &macData->bssAddr);
-			printf("UP client: %s joined %s with AP %s\n",
-					node->hostname,
-					macData->stationMIB->dot11DesiredSSID,
-					macAdder);
-			break;*/
-		default:
+		default: {
 			printf("UP client: %s at time %s received "\
 				"message of unknown type %d\n",
 				node->hostname,
-				buf,
+				clockInSecond,
 				msg->eventType);
+		}
 	}
 	MESSAGE_Free(node, msg);
 }
@@ -747,7 +745,7 @@ void AppUpServerFinalize(Node *node, AppInfo *appInfo) {
 
 	printf("UP server: Finalized at %s\n", node->hostname);
 
-//	TODO: Statistics
+	// Statistics
 	if(node->appData.appStats) {
 		;
 	}
@@ -759,19 +757,19 @@ void AppUpClientFinalize(Node *node, AppInfo *appInfo) {
 
 //	printf("UP client: Finalized at %s\n", node->hostname);
 
-//	TODO: Statistics
+	// Statistics
 	if(node->appData.appStats) {
 		;
 	}
 }
 
 void AppUpServerPrintStats(Node *node, AppDataUpServer *serverPtr) {
-//	TODO: Statistics
+//	TODO
 	return;
 }
 
 void AppUpClientPrintStats(Node *node, AppDataUpClient *clientPtr) {
-//	TODO: Statistics
+//	TODO
 	return;
 }
 
@@ -884,26 +882,26 @@ AppUpClientGetClientPtr(
 	return NULL;
 }
 
+// Abandoned for virtual packets
+/*
 void AppUpClientSendNextPacket(
 		Node *node,
 		AppDataUpClient *clientPtr) {
+//	char buf[MAX_STRING_LENGTH];
+	char clockInSecond[MAX_STRING_LENGTH];
 	char* payload;
 	Int32 packetSize;
-	AppUpClientPacketList* list = clientPtr->packetList;
-	char buf[MAX_STRING_LENGTH];
+	AppUpClientPacketList* list = clientPtr->packets;
 
-	ctoa(node->getNodeTime(), buf);
+//	ctoa(node->getNodeTime(), buf);
+	TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 	if(clientPtr->sessionIsClosed) {
-		printf("%s: UP client at %s attempted invalid operation\n",
-				buf,
-				node->hostname);
+		printf("UP client: %s at time %s attempted invalid operation\n",
+				node->hostname, clockInSecond);
 		return;
 	}
 
-	/*
-	 * Developer should remember to lock/unlock packetListMutex in caller
-	 */
-	if(!clientPtr->packetList) /*if(clientPtr->packetList == NULL)*/ {
+	if(!clientPtr->packets) if(clientPtr->packets == NULL) {
 		assert(false);
 		return;
 	}
@@ -918,28 +916,30 @@ void AppUpClientSendNextPacket(
 	APP_AddPayload(node, msg, payload, packetSize);
 	node->appData.appTrafficSender->appTcpSend(node, msg);
 
-//	TODO: Statistics
+	// Statistics
 	if (node->appData.appStats)
 	{
 		;
 	}
 
 	MEM_free(payload);
-	clientPtr->packetList = list->next;
+	clientPtr->packets = list->next;
 	MEM_free(list);
 
-	if(clientPtr->packetList == NULL) {
+	if(clientPtr->packets == NULL) {
 		clientPtr->sessionIsClosed = true;
 		clientPtr->sessionFinish = node->getNodeTime();
 
-		// TODO: Statistics
+		// Statistics
 		if (node->appData.appStats)
 		{
 			;
 		}
 	}
-}
+}*/
 
+// Abandoned for virtual packets
+/*
 char* AppUpClientNewDataItem(
 		Int32 itemSize,
 		Int32& fullSize,
@@ -963,8 +963,10 @@ char* AppUpClientNewDataItem(
 	header->dataChunk.priority = priority;
 	header->dataChunk.next = NULL;
 	return item;
-}
+}*/
 
+// Abandoned for virtual packets
+/*
 void AppUpClientSendItem(
 		Node* node,
 		AppDataUpClient *clientPtr,
@@ -1014,22 +1016,18 @@ void AppUpClientSendItem(
 	itemPtr += itemSizeLeft;
 	itemSizeLeft -= itemSizeLeft;
 
-	pthread_mutex_lock(&clientPtr->packetListMutex);
-	clientPtr->packetList = AppUpClientPacketListAppend(
-			clientPtr->packetList,
+	pthread_mutex_lock(&clientPtr->packetsMutex);
+	clientPtr->packets = AppUpClientPacketListAppend(
+			clientPtr->packets,
 			list);
-	pthread_mutex_unlock(&clientPtr->packetListMutex);
+	pthread_mutex_unlock(&clientPtr->packetsMutex);
 
-//	TODO: Statistics
+	// Statistics
 	if (node->appData.appStats)
 	{
 		;
 	}
-
-	/*
-	 * Developer should remember to free memory of item in caller
-	 */
-}
+}*/
 
 char* AppUpClientNewVirtualDataItem(
 		Int32 itemSize,
@@ -1061,14 +1059,15 @@ void AppUpClientSendVirtualItem(
 		AppDataUpClient *clientPtr,
 		char* item,
 		Int32 itemSize) {
-	char buf[MAX_STRING_LENGTH];
+//	char buf[MAX_STRING_LENGTH];
+	char clockInSecond[MAX_STRING_LENGTH];
 	Int32 packetSize = sizeof(AppUpMessageHeader) + 2;
 
-	ctoa(node->getNodeTime(), buf);
+//	ctoa(node->getNodeTime(), buf);
+	TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 	if(clientPtr->sessionIsClosed) {
-		printf("%s: UP client at %s attempted invalid operation\n",
-				buf,
-				node->hostname);
+		printf("UP client: %s at time %s attempted invalid operation\n",
+				node->hostname, clockInSecond);
 		return;
 	}
 
@@ -1081,17 +1080,17 @@ void AppUpClientSendVirtualItem(
 	APP_AddVirtualPayload(node, msg, itemSize - packetSize);
 	node->appData.appTrafficSender->appTcpSend(node, msg);
 
-//	TODO: Statistics
+	// Statistics
 	if (node->appData.appStats)
 	{
 		;
 	}
 
-	if(clientPtr->packetList == NULL) {
+	if(clientPtr->packets == NULL) {
 		clientPtr->sessionIsClosed = true;
 		clientPtr->sessionFinish = node->getNodeTime();
 
-		// TODO: Statistics
+		// Statistics
 		if (node->appData.appStats)
 		{
 			;
@@ -1208,13 +1207,15 @@ void AppUpClientDaemonInit(
 			"new client\n", node->hostname);
 		assert(false);
 	}
+	if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
+		AppUpClientDaemonSetNextPathTimer(node, (clocktype)0, true);
+		char daemonRecFileName[MAX_STRING_LENGTH];
+		ofstream daemonRecFile;
 
-	char daemonRecFileName[MAX_STRING_LENGTH];
-	ofstream daemonRecFile;
-
-	sprintf(daemonRecFileName, "daemon_%s.out", node->hostname);
-	daemonRecFile.open(daemonRecFileName);
-	daemonRecFile.close();
+		sprintf(daemonRecFileName, "daemon_%s.out", node->hostname);
+		daemonRecFile.open(daemonRecFileName);
+		daemonRecFile.close();
+	}
 
 	printf("UP client daemon: Initialized at %s\n",
 			node->hostname);
@@ -1233,8 +1234,12 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 	int dataChunkSize = 0;
 	int dataChunkDeadline = 0;
 	float dataChunkPriority = 0.0;
+	char pathFileName[MAX_STRING_LENGTH];
 	char planFileName[MAX_STRING_LENGTH];
 	int numValues;
+	CoordinateRepresentationType coordinateSystemType =
+			(CoordinateRepresentationType)
+			node->partitionData->terrainData->getCoordinateSystem();
 
 	// Allocate memory for data structure
 	upClientDaemon = (AppDataUpClientDaemon*)
@@ -1247,9 +1252,16 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 	upClientDaemon->destNodeId = destNodeId;
 	upClientDaemon->nodeType = nodeType;
 	upClientDaemon->inputString = new std::string(inputString);
-	upClientDaemon->joinedId = -1;
+	upClientDaemon->joinedAId = -1;
 	upClientDaemon->plan = new std::map<int, int>;
 	upClientDaemon->connAttempted = 0;
+	upClientDaemon->path = NULL;
+	upClientDaemon->initPos.cartesian.x = (CoordinateType)0;
+	upClientDaemon->initPos.cartesian.y = (CoordinateType)0;
+	upClientDaemon->initPos.cartesian.z = (CoordinateType)0;
+	upClientDaemon->initPos.type = coordinateSystemType;
+	upClientDaemon->timeoutId = 0;
+	upClientDaemon->sending = 0;
 
 	if (appName) {
 		upClientDaemon->applicationName = new std::string(appName);
@@ -1259,40 +1271,145 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 
 	if(nodeType == APP_UP_NODE_MDC) {
 		numValues = sscanf(inputString,
-				"%*s %*s %*s %*s %s",
+				"%*s %*s %*s %*s %s %s",
+				pathFileName,
 				planFileName);
-		if(numValues != 1) assert(false);
+		assert(numValues == 2);
+
+		/* Read paht */ {
+			ifstream pathFile;
+			int numStops = 0;
+			int linesRead = 0;
+			double tStop, xStop, yStop;
+			AppUpPathStop* ptrStop;
+			AppUpPathStop* tmpStop;
+
+			pathFile.open(pathFileName);
+			assert(pathFile.is_open());
+			pathFile >> numStops;
+			assert(numStops >= 0);
+			printf("UP client daemon: %s will read %d stops\n",
+					node->hostname,
+					numStops);
+			while(pathFile >> tStop >> xStop >> yStop) {
+				tmpStop = (AppUpPathStop*)MEM_malloc(sizeof(AppUpPathStop));
+				tmpStop->t = tStop;
+				tmpStop->crds.cartesian.x = (CoordinateType)xStop;
+				tmpStop->crds.cartesian.y = (CoordinateType)yStop;
+				tmpStop->crds.cartesian.z = (CoordinateType)0;
+				tmpStop->crds.type = coordinateSystemType;
+				tmpStop->lsAId = new map<int, int>;
+				tmpStop->lsDId = new map<int, int>;
+				tmpStop->next = NULL;
+
+				/* Read AP list (at this stop) */{
+					int numA = 0;
+					int idA;
+					int j;
+
+					pathFile >> numA;
+					assert(numA >= 0);
+					for(j = 0; j < numA && pathFile >> idA; ++j) {
+						assert(tmpStop->lsAId->count(idA) < 1);
+						tmpStop->lsAId->insert(
+								pair<int, int>(idA, APP_UP_PLAN_TASK_INIT));
+					}
+					assert(j == numA);
+				}
+
+				/* Read DS list (at this stop) */ {
+					int numD = 0;
+					int idD;
+					int j;
+
+					pathFile >> numD;
+					assert(numD >= 0);
+					for(j = 0; j < numD && pathFile >> idD; ++j) {
+						assert(tmpStop->lsDId->count(idD) < 1);
+						tmpStop->lsDId->insert(
+								pair<int, int>(idD, APP_UP_PLAN_TASK_INIT));
+					}
+					assert(j == numD);
+				}
+
+				/* XXX
+				 * Current implementation does not allow one stop
+				 * 		to have both AP and DS.
+				 * This is made guaranteed in scenario generation script
+				 */
+				assert(tmpStop->lsAId->size() < 1
+						|| tmpStop->lsDId->size() < 1);
+
+				if(upClientDaemon->path) {
+					ptrStop->next = tmpStop;
+				} else {
+					upClientDaemon->path = tmpStop;
+				}
+				ptrStop = tmpStop;
+				++linesRead;
+			}
+			pathFile.close();
+			assert(linesRead == numStops);
+
+			printf("UP client daemon: %s read path from file: %s\n",
+					node->hostname,
+					pathFileName);
+			for(ptrStop = upClientDaemon->path;
+					ptrStop;
+					ptrStop = ptrStop->next) {
+				printf("%+12.2f @ %.1f, %.1f >>",
+						ptrStop->t,
+						ptrStop->crds.cartesian.x,
+						ptrStop->crds.cartesian.y);
+				for(map<int, int>::iterator it = ptrStop->lsAId->begin();
+						it != ptrStop->lsAId->end();
+						++it) {
+					printf(" %d", it->first);
+				}
+				if(ptrStop->lsAId->size() < 1) printf(" *");
+				printf(" <<");
+				for(map<int, int>::iterator it = ptrStop->lsDId->begin();
+						it != ptrStop->lsDId->end();
+						++it) {
+					printf(" %d", it->first);
+				}
+				if(ptrStop->lsDId->size() < 1) printf(" *");
+				printf("\n");
+			}
+		}
+
 		if(strcmp(planFileName, "-") == 0) {
 			upClientDaemon->test = true;
-		} else {
+		} else { // Read plan
 			upClientDaemon->test = false;
 
 			ifstream planFile;
 			int numDataChunks = 0;
 			int linesRead = 0;
-			int idData, idAP;
+			int idD, idA;
 
 			planFile.open(planFileName);
 			assert(planFile.is_open());
 			planFile >> numDataChunks;
+			assert(numDataChunks >= 0);
 			printf("UP client daemon: %s will read %d data chunks\n",
 					node->hostname,
 					numDataChunks);
-			while(planFile >> idData >> idAP) {
-				assert(upClientDaemon->plan->count(idData) < 1);
-				upClientDaemon->plan->insert(pair<int, int>(idData, idAP));
+			while(planFile >> idD >> idA) {
+				assert(upClientDaemon->plan->count(idD) < 1);
+				upClientDaemon->plan->insert(pair<int, int>(idD, idA));
 				++linesRead;
 			}
 			planFile.close();
 			assert(linesRead == numDataChunks);
 
-			printf("UP client daemon: %s read plan from file %s\n",
+			printf("UP client daemon: %s read plan from file: %s\n",
 					node->hostname,
 					planFileName);
 			for(map<int, int>::iterator it = upClientDaemon->plan->begin();
 					it != upClientDaemon->plan->end();
 					++it) {
-				printf("\t%d -> %d\n", it->first, it->second);
+				printf("%12d -> %d\n", it->first, it->second);
 			}
 		}
 
@@ -1333,14 +1450,15 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 }
 
 void AppLayerUpClientDaemon(Node *node, Message *msg) {
-	char buf[MAX_STRING_LENGTH];
+//	char buf[MAX_STRING_LENGTH];
+	char clockInSecond[MAX_STRING_LENGTH];
 	AppDataUpClientDaemon* clientDaemonPtr;
 	char daemonRecFileName[MAX_STRING_LENGTH];
 	ofstream daemonRecFile;
-	char clockInSecond[MAX_STRING_LENGTH];
 
+	clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
 	sprintf(daemonRecFileName, "daemon_%s.out", node->hostname);
-	ctoa(node->getNodeTime(), buf);
+	TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 /*	printf("UP client: %s at time %s processed an event\n",
 		node->hostname,
 		buf);*/
@@ -1381,23 +1499,46 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				bssAddrArray[4],
 				bssAddrArray[5]);
 
-		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
+//		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
 //		assert(clientDaemonPtr != NULL);
 		if(!clientDaemonPtr) break;
 
 		clientDaemonPtr->connAttempted = 0;
+		clientDaemonPtr->sending = 0;
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
 			int bssAddrIdentifier = 0;
 
 			// Calculation of identifier must be consistent with generator
 			bssAddrIdentifier = bssAddrArray[4] * 256 + bssAddrArray[5];
-			printf("UP client daemon: %s joined %s with AP, "
-					"identifier=%d\n",
+			printf("\033[1;36m"
+					"UP client daemon: %s joined %s with AP, "
+					"identifier=%d\n"
+					"\033[0m",
 					node->hostname,
 					macData->stationMIB->dot11DesiredSSID,
 					bssAddrIdentifier);
-			clientDaemonPtr->joinedId = bssAddrIdentifier;
+			clientDaemonPtr->joinedAId = bssAddrIdentifier;
+
+			AppUpPathStop* nextStop = clientDaemonPtr->path;
+			int joinedAId = clientDaemonPtr->joinedAId;
+
+			// Mark corresponding task as going
+			assert(nextStop);
+			if(nextStop->lsAId->count(joinedAId) > 0) {
+				nextStop->lsAId->at(joinedAId) =
+						APP_UP_PLAN_TASK_WAIT;
+			} else { // Connected to another AP
+				for(AppUpPathStop* ptrStop = nextStop;
+						ptrStop;
+						ptrStop = ptrStop->next) {
+					if(ptrStop->lsAId->count(joinedAId) > 0) {
+						ptrStop->lsAId->at(joinedAId) =
+								APP_UP_PLAN_TASK_WAIT;
+						break;
+					}
+				}
+			}
 		}
 
 		// Print coordinates
@@ -1446,27 +1587,31 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 			printf("UP client daemon: Unknown type of coordinates\n");
 		}*/
 
-		printf("UP client daemon: %s is at (%.1f, %.1f, %.1f)\n",
-				node->hostname,
-				crds.cartesian.x,
-				crds.cartesian.y,
-				crds.cartesian.z);
-
 		// Print other mobility facts
 		MobilityData* mobility = node->mobilityData;
 		MobilityRemainder* remainder = &mobility->remainder;
-		const Coordinates* dest = &mobility
-				->destArray[remainder->destCounter].position;
+		Coordinates dest;
+
+		if(mobility->current->speed > 0) {
+			dest = clientDaemonPtr->path->crds;
+		} else {
+			dest = mobility->current->position;
+		}
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
+			printf("UP client daemon: %s is now at (%.1f, %.1f, %.1f)\n",
+					node->hostname,
+					crds.cartesian.x,
+					crds.cartesian.y,
+					crds.cartesian.z);
 			printf("UP client daemon: %s is moving at speed %.1f\n",
 					node->hostname,
 					mobility->current->speed);
 			printf("UP client daemon: %s is heading to (%.1f, %.1f, %.1f)\n",
 					node->hostname,
-					dest->cartesian.x,
-					dest->cartesian.y,
-					dest->cartesian.z);
+					dest.cartesian.x,
+					dest.cartesian.y,
+					dest.cartesian.z);
 		}
 
 		// Initialize client application
@@ -1506,7 +1651,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		int waitTime;
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
-			COORD_CalcDistance(CARTESIAN, &crds, dest, &distance);
+			COORD_CalcDistance(CARTESIAN, &crds, &dest, &distance);
 			waitTime = (int)((distance - APP_UP_WIRELESS_CLOSE_RANGE)
 						/ mobility->current->speed)
 					+ APP_UP_WIRELESS_AP_WAIT_TIME;
@@ -1520,7 +1665,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		char clockInSecond[MAX_STRING_LENGTH];*/
 		int chunkIdentifier = 0;
 
-		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+//		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 //		sprintf(daemonRecFileName, "daemon_%s.out", node->hostname);
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
@@ -1529,6 +1674,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 						"waitTime=%d\n",
 						node->hostname,
 						waitTime);
+				clientDaemonPtr->sending += 1;
 				AppUpClientInit(
 						node,
 						sourceAddr,
@@ -1564,6 +1710,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 						"waitTime=%d\n",
 						node->hostname,
 						waitTime);
+				clientDaemonPtr->sending += 1;
 				AppUpClientInit(
 						node,
 						sourceAddr,
@@ -1577,7 +1724,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				clientDaemonPtr->dataChunks =
 						clientDaemonPtr->dataChunks->next;
 
-				daemonRecFile.open(daemonRecFileName, ios::app);
+/*				daemonRecFile.open(daemonRecFileName, ios::app);
 				daemonRecFile << "DATA" << " "
 						<< node->hostname
 						<< " " << "PREP DATA" << " "
@@ -1585,7 +1732,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 						<< " " << "AT TIME" << " "
 						<< clockInSecond
 						<< std::endl;
-				daemonRecFile.close();
+				daemonRecFile.close();*/
 			}
 		} else assert(false);
 		break; }
@@ -1600,85 +1747,137 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		ofstream daemonRecFile;
 		char clockInSecond[MAX_STRING_LENGTH];*/
 
-		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+//		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 //		sprintf(daemonRecFileName, "daemon_%s.out", node->hostname);
-		daemonRecFile.open(daemonRecFileName, ios::app);
 
-		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
+//		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
 		if(!clientDaemonPtr) break;
 
 		clientDaemonPtr->connAttempted = 0;
+		clientDaemonPtr->sending -= 1;
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
-			daemonRecFile << "MDC";
-		} else if (clientDaemonPtr->nodeType == APP_UP_NODE_DATA_SITE) {
-			daemonRecFile << "DATA";
-		} else assert(false);
-		daemonRecFile << " "
-				<< node->hostname
-				<< " " << "SENT DATA" << " "
-				<< *chunkIdentifier
-				<< " " << "AT TIME" << " "
-				<< clockInSecond
-				<< std::endl;
-		daemonRecFile.close();
+			daemonRecFile.open(daemonRecFileName, ios::app);
+			daemonRecFile << "MDC" << " "
+					<< node->hostname
+					<< " " << "SENT DATA" << " "
+					<< *chunkIdentifier
+					<< " " << "AT TIME" << " "
+					<< clockInSecond
+					<< std::endl;
+			daemonRecFile.close();
 
-		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC
-				&& clientDaemonPtr->test == false) {
-			// Initialize client application
-			char sourceString[MAX_STRING_LENGTH];
-			char destString[MAX_STRING_LENGTH];
-			NodeAddress sourceNodeId;
-			Address sourceAddr;
-			NodeAddress destNodeId;
-			Address destAddr;
-			char sourceAddrStr[MAX_STRING_LENGTH];
-			char destAddrStr[MAX_STRING_LENGTH];
+			if(clientDaemonPtr->test) {
+				AppUpClientDaemonCompAtA(
+						node,
+						clientDaemonPtr,
+						clientDaemonPtr->joinedAId);
+			} else {
+				// Initialize client application
+/*				char sourceString[MAX_STRING_LENGTH];
+				char destString[MAX_STRING_LENGTH];
+				NodeAddress sourceNodeId;
+				Address sourceAddr;
+				NodeAddress destNodeId;
+				Address destAddr;
+				char sourceAddrStr[MAX_STRING_LENGTH];
+				char destAddrStr[MAX_STRING_LENGTH];
 
-			sscanf(clientDaemonPtr->inputString->c_str(),
-					"%*s %s %s",
-					sourceString,
-					destString);
-			IO_AppParseSourceAndDestStrings(
-					clientDaemonPtr->firstNode,
-					clientDaemonPtr->inputString->c_str(),
-					sourceString,
-					&sourceNodeId,
-					&sourceAddr,
-					destString,
-					&destNodeId,
-					&destAddr);
-			AppUpClientDaemonSendNextDataChunk(
-					node,
-					clientDaemonPtr,
-					sourceAddr,
-					destAddr,
-					sourceString,
-					0,
-					daemonRecFileName);
+				sscanf(clientDaemonPtr->inputString->c_str(),
+						"%*s %s %s",
+						sourceString,
+						destString);
+				IO_AppParseSourceAndDestStrings(
+						clientDaemonPtr->firstNode,
+						clientDaemonPtr->inputString->c_str(),
+						sourceString,
+						&sourceNodeId,
+						&sourceAddr,
+						destString,
+						&destNodeId,
+						&destAddr);
+				AppUpClientDaemonSendNextDataChunk(
+						node,
+						clientDaemonPtr,
+						sourceAddr,
+						destAddr,
+						sourceString,
+						0,
+						daemonRecFileName);*/
+				AppUpClientDaemonSendNextDataChunk(
+						node,
+						clientDaemonPtr,
+						0);
+			}
 		}
 		break; }
-	case MSG_APP_UP_DataChunkReceived: {
-		int* chunkIdentifier;
-		AppUpClientDaemonDataChunkStr* chunk;
+	case MSG_APP_UP_DataChunkHeaderReceived: {
+		int chunkIdentifier;
+		AppUpPathStop* nextStop = clientDaemonPtr->path;
 
-		chunkIdentifier = (int*)MESSAGE_ReturnInfo(msg);
-		chunk = (AppUpClientDaemonDataChunkStr*)MESSAGE_ReturnPacket(msg);
-		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
+		chunkIdentifier = *(int*)MESSAGE_ReturnInfo(msg);
+
 		if(clientDaemonPtr->nodeType != APP_UP_NODE_MDC) {
 			printf("UP client daemon: %s will not process data chunk\n",
 					node->hostname);
 			break;
 		} // Should not happen
 		// Because non-MDC nodes will not send MSG_APP_UP_DataChunkReceived
-		if(chunkIdentifier <= 0) {
+		assert(chunkIdentifier > 0);
+//		assert(nextStop);
+		if(!nextStop) {
+			printf("UP client daemon: %s disregarded past data chunk, "
+					"identifier=%d\n",
+					node->hostname,
+					chunkIdentifier);
+			break;
+		}
+		if(nextStop->lsDId->count(chunkIdentifier) > 0) {
+			nextStop->lsDId->at(chunkIdentifier) =
+					APP_UP_PLAN_TASK_WAIT;
+		} else { // Received data chunk from another DS
+			AppUpPathStop* ptrStop;
+
+			for(ptrStop = nextStop; ptrStop; ptrStop = ptrStop->next) {
+				if(ptrStop->lsDId->count(chunkIdentifier) > 0) {
+					ptrStop->lsDId->at(chunkIdentifier) =
+							APP_UP_PLAN_TASK_WAIT;
+					break;
+				}
+			}
+			if(!ptrStop) {
+				printf("UP client daemon: %s disregarded past data chunk, "
+						"identifier=%d",
+						node->hostname,
+						chunkIdentifier);
+			}
+		}
+		break; }
+	case MSG_APP_UP_DataChunkReceived: {
+		int chunkIdentifier;
+		AppUpClientDaemonDataChunkStr* chunk;
+
+		chunkIdentifier = *(int*)MESSAGE_ReturnInfo(msg);
+		chunk = (AppUpClientDaemonDataChunkStr*)MESSAGE_ReturnPacket(msg);
+
+//		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
+
+		if(clientDaemonPtr->nodeType != APP_UP_NODE_MDC) {
+			printf("UP client daemon: %s will not process data chunk\n",
+					node->hostname);
+			break;
+		} // Should not happen
+		// Because non-MDC nodes will not send MSG_APP_UP_DataChunkReceived
+/*		if(chunkIdentifier <= 0) {
 			printf("UP client daemon: %s will not process test chunk\n",
 					node->hostname);
 			break;
-		} // Should not happen in normal operation
+		}*/ // Should not happen in normal operation
 		// Because generation script will not make data chunks with id < 0
+		assert(chunkIdentifier > 0);
 
 		AppUpClientDaemonDataChunkStr* chunkToAdd;
+		AppUpPathStop* nextStop = clientDaemonPtr->path;
 
 		chunkToAdd = (AppUpClientDaemonDataChunkStr*)
 				MEM_malloc(sizeof(AppUpClientDaemonDataChunkStr));
@@ -1686,17 +1885,85 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 
 		chunkToAdd->next = clientDaemonPtr->dataChunks;
 		clientDaemonPtr->dataChunks = chunkToAdd;
+//		assert(nextStop);
+		if(!nextStop) {
+			printf("UP client daemon: %s disregarded past data chunk, "
+					"identifier=%d",
+					node->hostname,
+					chunkIdentifier);
+			break;
+		}
+		if(nextStop->lsDId->count(chunkIdentifier) > 0) {
+			printf("UP client daemon: %s <- %d (%.1f, %.1f, %.1f)\n",
+					node->hostname,
+					chunkIdentifier,
+					nextStop->crds.cartesian.x,
+					nextStop->crds.cartesian.y,
+					nextStop->crds.cartesian.z);
+			nextStop->lsDId->at(chunkIdentifier) =
+					APP_UP_PLAN_TASK_COMP;
+		} else { // Received data chunk from another DS
+			AppUpPathStop* ptrStop;
 
-		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+			printf("UP client daemon: %s <- %d\n",
+					node->hostname,
+					chunkIdentifier);
+			for(ptrStop = nextStop; ptrStop; ptrStop = ptrStop->next) {
+				if(ptrStop->lsDId->count(chunkIdentifier) > 0) {
+					ptrStop->lsDId->at(chunkIdentifier) =
+							APP_UP_PLAN_TASK_COMP;
+					break;
+				}
+			}
+			if(!ptrStop) {
+				printf("UP client daemon: %s disregarded past data chunk, "
+						"identifier=%d",
+						node->hostname,
+						chunkIdentifier);
+				break;
+			}
+		}
+		clientDaemonPtr->timeoutId += 1;
+
+		AppUpClientDaemonSetNextPathStopTimeout(
+				node,
+				clientDaemonPtr,
+				APP_UP_PATH_STOP_TIMEOUT * SECOND);
+
+		printf("\033[1;32m"
+				"UP client daemon: %s completed with DS, identifier=%d\n"
+				"\033[0m",
+				node->hostname,
+				chunkIdentifier);
+
+//		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 		daemonRecFile.open(daemonRecFileName, ios::app);
 		daemonRecFile << "MDC" << " "
 				<< node->hostname
 				<< " " << "COMP DATA" <<" "
-				<< *chunkIdentifier
+				<< chunkIdentifier
 				<< " " << "AT TIME" << " "
 				<< clockInSecond
 				<< std::endl;
 		daemonRecFile.close();
+
+		if(nextStop->lsAId->size() < 1) {
+			AppUpClientDaemonCheckStop(node, clientDaemonPtr, false);
+		} /*else if(clientDaemonPtr->joinedAId < 0) {
+			AppUpClientDaemonCheckStop(node, clientDaemonPtr, false);
+		} else {
+			for(map<int, int>::iterator it = nextStop->lsAId->begin();
+					it != nextStop->lsAId->end();
+					++it){
+				if(it->first == clientDaemonPtr->joinedAId) {
+					if(it->second == APP_UP_PLAN_TASK_COMP) {
+						it->second = APP_UP_PLAN_TASK_WAIT;
+					}
+					break;
+				}
+			}
+			AppUpClientDaemonSendNextDataChunk(node, clientDaemonPtr, 0);
+		}*/
 		break; }
 	case MSG_APP_UP_TransportConnectionFailed: {
 		int* chunkIdentifier;
@@ -1704,7 +1971,8 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 
 		chunkIdentifier = (int*)MESSAGE_ReturnInfo(msg);
 		chunk = (AppUpClientDaemonDataChunkStr*)MESSAGE_ReturnPacket(msg);
-		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
+
+//		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
 
 		printf("UP client daemon: %s failed to connect for delivery, "
 				"id=%d connAttempted=%d\n",
@@ -1713,13 +1981,13 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				clientDaemonPtr->connAttempted);
 
 		map<int, int>* plan = clientDaemonPtr->plan;
-		int joinedId = clientDaemonPtr->joinedId;
+		int joinedAId = clientDaemonPtr->joinedAId;
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC
-				&& (joinedId < 0
+				&& (joinedAId < 0
 						|| (*chunkIdentifier > 0
 								&& plan->count(*chunkIdentifier) > 0
-								&& plan->at(*chunkIdentifier) != joinedId))) {
+								&& plan->at(*chunkIdentifier) != joinedAId))) {
 			// No longer at the correct AP
 			;
 		} else
@@ -1736,7 +2004,6 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 			Address destAddr;
 			char sourceAddrStr[MAX_STRING_LENGTH];
 			char destAddrStr[MAX_STRING_LENGTH];
-			char clockInSecond[MAX_STRING_LENGTH];
 			int waitTime = 0;
 
 			sscanf(clientDaemonPtr->inputString->c_str(),
@@ -1756,7 +2023,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 					"waitTime=%d\n",
 					node->hostname,
 					waitTime);
-			TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+//			TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 /*			if(clientDaemonPtr->nodeType == APP_UP_NODE_DATA_SITE
 					|| (clientDaemonPtr->nodeType == APP_UP_NODE_MDC
 							&& chunkIdentifier > 0)) {*/
@@ -1787,43 +2054,65 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 						waitTime /*0*/,
 						NULL);
 			}
-			daemonRecFile.open(daemonRecFileName, ios::app);
+
 			if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
-				daemonRecFile << "MDC";
-			} else {
-				daemonRecFile << "DATA";
-			}
-			daemonRecFile << " "
+				daemonRecFile.open(daemonRecFileName, ios::app);
+				daemonRecFile << "MDC" << " "
 					<< node->hostname
 					<< " " << "REPR DATA" << " "
 					<< *chunkIdentifier
 					<< " " << "AT TIME" << " "
 					<< clockInSecond
 					<< std::endl;
-			daemonRecFile.close();
+				daemonRecFile.close();
+			}
 			++clientDaemonPtr->connAttempted;
 		} else {
-			if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
-				printf("UP client daemon: %s will continue\n", node->hostname);
-			}
+			clientDaemonPtr->sending -= 1;
 
-			TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
-			daemonRecFile.open(daemonRecFileName, ios::app);
-			daemonRecFile << "MDC" << " "
-					<< node->hostname
-					<< " " << "COMP AP" <<" "
-					<< clientDaemonPtr->joinedId
-					<< " " << "AT TIME" << " "
-					<< clockInSecond
-					<< std::endl;
-			daemonRecFile.close();
+			if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
+				AppUpClientDaemonCompAtA(
+						node,
+						clientDaemonPtr,
+						joinedAId);
+			}
+		}
+		break; }
+	case MSG_APP_UP_PathTimer:
+		bool initPath;
+
+		initPath = *(bool*)MESSAGE_ReturnInfo(msg);
+		AppUpClientDaemonMobilityModelProcess(
+				node,
+				clientDaemonPtr,
+				initPath);
+		break;
+	case MSG_APP_UP_PathStopTimeout: {
+		int timeoutId;
+		Coordinates crds;
+
+		timeoutId = *(int*)MESSAGE_ReturnInfo(msg);
+		crds = node->mobilityData->current->position;
+		if(timeoutId == clientDaemonPtr->timeoutId) {
+			if(AppUpClientDaemonCheckStop(node, clientDaemonPtr, true)) {
+				printf("\033[1;33m"
+						"UP client daemon: %s timed out, timeoutId=%d\n"
+						"\033[0m",
+						node->hostname,
+						timeoutId);
+			}
+		} else {
+			printf("UP client daemon: %s disregarded timeout checker, "
+					"timeoutId=%d\n",
+					node->hostname,
+					timeoutId);
 		}
 		break; }
 	default:
 		printf("UP client daemon: %s at time %s received "\
 			"message of unknown type %d\n",
 			node->hostname,
-			buf,
+			clockInSecond,
 			msg->eventType);
 	}
 	MESSAGE_Free(node, msg);
@@ -1833,9 +2122,9 @@ void AppUpClientDaemonFinalize(Node *node, AppInfo *appInfo) {
 	AppDataUpClient *clientDaemonPtr = (AppDataUpClient*)appInfo->appDetail;
 	char addrStr[MAX_STRING_LENGTH];
 
-	printf("UP client daemon: Finalized at %s\n", node->hostname);
+//	printf("UP client daemon: Finalized at %s\n", node->hostname);
 
-//	TODO: Statistics
+	// Statistics
 	if(node->appData.appStats) {
 		;
 	}
@@ -1862,15 +2151,15 @@ int AppUpClientDaemonGetNextDataChunk(AppDataUpClientDaemon* clientDaemonPtr) {
 //	std::list<pair<int, float> > chunks;
 	map<int, int>* plan = clientDaemonPtr->plan;
 	AppUpClientDaemonDataChunkStr* chunk;
-	int joinedId = clientDaemonPtr->joinedId;
+	int joinedAId = clientDaemonPtr->joinedAId;
 	int chunkId = -1;
 	float chunkPriority = 0.0;
 
-	if(joinedId < 1) return chunkId; // -1
+	if(joinedAId < 1) return chunkId; // -1
 	chunk = clientDaemonPtr->dataChunks;
 	while(chunk) {
 		if(plan->count(chunk->identifier) > 0
-		&& plan->at(chunk->identifier) == joinedId) {
+		&& plan->at(chunk->identifier) == joinedAId) {
 			if(chunkId < 0 || chunkPriority < chunk->priority) {
 				chunkId = chunk->identifier;
 				chunkPriority = chunk->priority;
@@ -1891,9 +2180,9 @@ void AppUpClientDaemonSendNextDataChunk(
 		char* daemonRecFileName) {
 	char clockInSecond[MAX_STRING_LENGTH];
 	int chunkIdToSend;
-//	int chunkIdentifier;
 	ofstream daemonRecFile;
 
+	TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 	chunkIdToSend = AppUpClientDaemonGetNextDataChunk(clientDaemonPtr);
 	if(chunkIdToSend > 0) {
 		AppUpClientDaemonDataChunkStr* chunkHeader;
@@ -1921,7 +2210,8 @@ void AppUpClientDaemonSendNextDataChunk(
 				"waitTime=%d\n",
 				node->hostname,
 				waitTime);
-		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+//		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+		clientDaemonPtr->sending += 1;
 		AppUpClientInit(
 				node,
 				sourceAddr,
@@ -1931,7 +2221,6 @@ void AppUpClientDaemonSendNextDataChunk(
 				clientDaemonPtr->nodeType,
 				waitTime,
 				chunkToSend);
-//		chunkIdentifier = chunkToSend->identifier;
 		daemonRecFile.open(daemonRecFileName, ios::app);
 		daemonRecFile << "MDC" << " "
 				<< node->hostname
@@ -1942,18 +2231,350 @@ void AppUpClientDaemonSendNextDataChunk(
 				<< std::endl;
 		daemonRecFile.close();
 	} else {
-		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
-		printf("UP client daemon: %s will continue\n", node->hostname);
+//		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+/*		printf("UP client daemon: %s will continue\n", node->hostname);
 
 		daemonRecFile.open(daemonRecFileName, ios::app);
 		daemonRecFile << "MDC" << " "
 				<< node->hostname
 				<< " " << "COMP AP" <<" "
-				<< clientDaemonPtr->joinedId
+				<< clientDaemonPtr->joinedAId
 				<< " " << "AT TIME" << " "
 				<< clockInSecond
 				<< std::endl;
 		daemonRecFile.close();
-		clientDaemonPtr->joinedId = -1;
+		clientDaemonPtr->joinedAId = -1;*/
+		AppUpClientDaemonCompAtA(
+				node,
+				clientDaemonPtr,
+				clientDaemonPtr->joinedAId);
 	}
 }
+
+void AppUpClientDaemonSendNextDataChunk(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		int waitTime) {
+	char sourceString[MAX_STRING_LENGTH];
+	char destString[MAX_STRING_LENGTH];
+	NodeAddress sourceNodeId;
+	Address sourceAddr;
+	NodeAddress destNodeId;
+	Address destAddr;
+	char sourceAddrStr[MAX_STRING_LENGTH];
+	char destAddrStr[MAX_STRING_LENGTH];
+	char daemonRecFileName[MAX_STRING_LENGTH];
+
+	sscanf(clientDaemonPtr->inputString->c_str(),
+			"%*s %s %s",
+			sourceString,
+			destString);
+	IO_AppParseSourceAndDestStrings(
+			clientDaemonPtr->firstNode,
+			clientDaemonPtr->inputString->c_str(),
+			sourceString,
+			&sourceNodeId,
+			&sourceAddr,
+			destString,
+			&destNodeId,
+			&destAddr);
+	sprintf(daemonRecFileName, "daemon_%s.out", node->hostname);
+	AppUpClientDaemonSendNextDataChunk(
+			node,
+			clientDaemonPtr,
+			sourceAddr,
+			destAddr,
+			sourceString,
+			waitTime,
+			daemonRecFileName);
+}
+
+void AppUpClientDaemonSetNextPathTimer(
+		Node* node,
+		clocktype interval,
+		bool init) {
+	Message* msg;
+	ActionData acnData;
+
+	msg = MESSAGE_Alloc(node,
+			APP_LAYER,
+			APP_UP_CLIENT_DAEMON,
+			MSG_APP_UP_PathTimer);
+	MESSAGE_InfoAlloc(node, msg, sizeof(bool));
+	memcpy(MESSAGE_ReturnInfo(msg), &init, sizeof(bool));
+
+	//Trace Information
+	acnData.actionType = SEND;
+	acnData.actionComment = NO_COMMENT;
+	TRACE_PrintTrace(node, msg, TRACE_APPLICATION_LAYER,
+			PACKET_OUT, &acnData);
+	MESSAGE_Send(node, msg, interval);
+}
+
+void AppUpClientDaemonSetNextPathStopTimeout(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		clocktype interval) {
+	Message* msg;
+	ActionData acnData;
+
+	msg = MESSAGE_Alloc(node,
+			APP_LAYER,
+			APP_UP_CLIENT_DAEMON,
+			MSG_APP_UP_PathStopTimeout);
+	MESSAGE_InfoAlloc(node, msg, sizeof(int));
+	memcpy(MESSAGE_ReturnInfo(msg),
+			&clientDaemonPtr->timeoutId,
+			sizeof(int));
+
+	printf("UP client daemon: %s set this stop's timeout, timeoutId=%d\n",
+			node->hostname,
+			clientDaemonPtr->timeoutId);
+
+	//Trace Information
+	acnData.actionType = SEND;
+	acnData.actionComment = NO_COMMENT;
+	TRACE_PrintTrace(node, msg, TRACE_APPLICATION_LAYER,
+			PACKET_OUT, &acnData);
+	MESSAGE_Send(node, msg, interval);
+}
+
+void AppUpClientDaemonMobilityModelProcess(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		bool init) {
+	Coordinates crds;
+	Orientation ornt;
+	Coordinates crdsStop;
+	Orientation orntPrep;
+	CoordinateType distance = (CoordinateType)0;
+	clocktype timeNow = node->getNodeTime();
+	CoordinateRepresentationType coordinateSystemType =
+			(CoordinateRepresentationType)
+			node->partitionData->terrainData->getCoordinateSystem();
+
+	MOBILITY_ReturnCoordinates(node, &crds);
+	MOBILITY_ReturnOrientation(node, &ornt);
+	orntPrep.azimuth = 0;
+	orntPrep.elevation = 0;
+
+/*	printf("UP client daemon: %s path timer triggered\n",
+			node->hostname);*/
+	if(init) { // Initialize my mobility model
+		clientDaemonPtr->initPos = crds;
+		printf("\033[1;33m"
+				"UP client daemon: %s is initialized at (%.1f, %.1f, %.1f)\n"
+				"\033[0m",
+				node->hostname,
+				clientDaemonPtr->initPos.cartesian.x,
+				clientDaemonPtr->initPos.cartesian.y,
+				clientDaemonPtr->initPos.cartesian.z);
+	}
+	if(clientDaemonPtr->path == NULL) return;
+
+	Coordinates crdsNext;
+	AppUpPathStop* stopNext = clientDaemonPtr->path;
+
+	crdsStop = stopNext->crds;
+	COORD_CalcDistance(coordinateSystemType, &crds, &crdsStop, &distance);
+	if(distance < APP_UP_PATH_TOL) {
+		clocktype timeStay = (clocktype)0;
+
+		if(init) { // Stay
+			if(stopNext->t * SECOND > timeNow) {
+				timeStay = stopNext->t * SECOND - timeNow;
+			}
+			MOBILITY_InsertANewEvent(node,
+					timeNow + timeStay,
+					crdsStop, orntPrep, 0.);
+			AppUpClientDaemonSetNextPathTimer(node, timeStay, false);
+		} else { // Arrived
+			printf("\033[1;33m"
+					"UP client daemon: %s arrived at (%.1f, %.1f, %.1f)\n"
+					"\033[0m",
+					node->hostname,
+					crds.cartesian.x,
+					crds.cartesian.y,
+					crds.cartesian.z);
+			if(stopNext->lsAId->size() < 1 && stopNext->lsDId->size() < 1) {
+				clientDaemonPtr->path = stopNext->next;
+				delete(stopNext->lsAId);
+				delete(stopNext->lsDId);
+				MEM_free(stopNext);
+				AppUpClientDaemonSetNextPathTimer(node, (clocktype)0, false);
+			} else {
+				if(!AppUpClientDaemonCheckStop(node, clientDaemonPtr, false)) {
+					if(clientDaemonPtr->sending < 1
+							&&clientDaemonPtr->joinedAId > 0
+							&&stopNext->lsAId->size() > 0) {
+						AppUpClientDaemonSendNextDataChunk(
+								node,
+								clientDaemonPtr,
+								0);
+					} else {
+						int timeout = APP_UP_PATH_STOP_TIMEOUT;
+
+						if(stopNext->lsDId->size() > 0) {
+							timeout = APP_UP_PATH_STOP_TIMEOUT_2;
+						}
+						AppUpClientDaemonSetNextPathStopTimeout(
+								node,
+								clientDaemonPtr,
+								timeout * SECOND);
+					}
+				}
+			}
+		}
+	} else { // Moving
+		double speed;
+		double cosAng = (crdsStop.cartesian.x - crds.cartesian.x) / distance;
+		double sinAng = (crdsStop.cartesian.y - crds.cartesian.y) / distance;
+		clocktype timeNext;
+
+		if(node->mobilityData->current->speed == 0) {
+			speed = distance / stopNext->t;
+			printf("UP client daemon: %s started to move at speed %.1f\n",
+					node->hostname,
+					speed);
+			printf("UP client daemon: %s is heading to (%.1f, %.1f, %.1f)\n",
+					node->hostname,
+					crdsStop.cartesian.x,
+					crdsStop.cartesian.y,
+					crdsStop.cartesian.z);
+		} else {
+			speed = node->mobilityData->current->speed;
+		}
+		if(distance > APP_UP_PATH_SIMU_DISTANCE + APP_UP_PATH_TOL) {
+			crdsNext = crds;
+			crdsNext.cartesian.x += APP_UP_PATH_SIMU_DISTANCE * cosAng;
+			crdsNext.cartesian.y += APP_UP_PATH_SIMU_DISTANCE * sinAng;
+			timeNext = APP_UP_PATH_SIMU_DISTANCE / speed * SECOND;
+		} else {
+			crdsNext = crdsStop;
+			timeNext = distance / speed * SECOND;
+			speed = 0;
+		}
+		MOBILITY_InsertANewEvent(node,
+				timeNow + timeNext,
+				crdsNext, orntPrep, speed);
+		AppUpClientDaemonSetNextPathTimer(node, timeNext, false);
+	}
+}
+
+bool AppUpClientDaemonCheckStop(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		bool timeoutFlag) {
+	assert(clientDaemonPtr->path);
+
+	bool completed = true;
+	map<int, int>* tasks;
+	AppUpPathStop* stopNext = clientDaemonPtr->path;
+
+	tasks = stopNext->lsAId;
+	for(map<int, int>::iterator it = tasks->begin();
+			it != tasks->end();
+			++it) {
+		if((!timeoutFlag && it->second == APP_UP_PLAN_TASK_INIT)
+				|| it->second == APP_UP_PLAN_TASK_WAIT) {
+			completed = false;
+		}
+	}
+	tasks = stopNext->lsDId;
+	for(map<int, int>::iterator it = tasks->begin();
+			it != tasks->end();
+			++it) {
+		if((!timeoutFlag && it->second == APP_UP_PLAN_TASK_INIT)
+				|| it->second == APP_UP_PLAN_TASK_WAIT) {
+			completed = false;
+		}
+	}
+
+	if(completed) {
+		if(node->mobilityData->current->speed > 0) {
+			printf("\033[1;33m"
+					"UP client daemon: %s signaled completion before arrival\n",
+					node->hostname);
+		} else {
+			clientDaemonPtr->timeoutId += 1;
+
+			printf("\033[1;33m"
+					"UP client daemon: %s completed at (%.1f, %.1f, %.1f)\n"
+					"\033[0m",
+					node->hostname,
+					stopNext->crds.cartesian.x,
+					stopNext->crds.cartesian.y,
+					stopNext->crds.cartesian.z);
+
+			clientDaemonPtr->path = stopNext->next;
+			delete(stopNext->lsAId);
+			delete(stopNext->lsDId);
+			MEM_free(stopNext);
+			AppUpClientDaemonSetNextPathTimer(node, (clocktype)0, false);
+		}
+	} else {
+		;
+	}
+	return completed;
+}
+
+void AppUpClientDaemonCompAtA(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		int joinedAId) {
+	char clockInSecond[MAX_STRING_LENGTH];
+	char daemonRecFileName[MAX_STRING_LENGTH];
+	ofstream daemonRecFile;
+	AppUpPathStop* nextStop = clientDaemonPtr->path;
+
+	sprintf(daemonRecFileName, "daemon_%s.out", node->hostname);
+	TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+
+	assert(nextStop);
+	if(nextStop->lsAId->count(joinedAId) > 0) {
+		printf("UP client daemon: %s -> %d (%.1f, %.1f, %.1f)\n",
+				node->hostname,
+				joinedAId,
+				nextStop->crds.cartesian.x,
+				nextStop->crds.cartesian.y,
+				nextStop->crds.cartesian.z);
+		nextStop->lsAId->at(joinedAId) =
+				APP_UP_PLAN_TASK_COMP;
+	} else {
+		for(AppUpPathStop* ptrStop = nextStop;
+				ptrStop;
+				ptrStop = ptrStop->next) {
+			if(ptrStop->lsAId->count(joinedAId) > 0) {
+				ptrStop->lsAId->at(joinedAId) =
+						APP_UP_PLAN_TASK_WAIT;
+				break;
+			}
+		}
+	}
+	clientDaemonPtr->timeoutId += 1;
+
+	AppUpClientDaemonSetNextPathStopTimeout(
+			node,
+			clientDaemonPtr,
+			APP_UP_PATH_STOP_TIMEOUT * SECOND);
+
+	printf("\033[1;32m"
+			"UP client daemon: %s completed with AP, "
+			"identifier=%d\n"
+			"\033[0m",
+			node->hostname,
+			clientDaemonPtr->joinedAId);
+
+	daemonRecFile.open(daemonRecFileName, ios::app);
+	daemonRecFile << "MDC" << " "
+			<< node->hostname
+			<< " " << "COMP AP" <<" "
+			<< clientDaemonPtr->joinedAId
+			<< " " << "AT TIME" << " "
+			<< clockInSecond
+			<< std::endl;
+	daemonRecFile.close();
+
+	AppUpClientDaemonCheckStop(node, clientDaemonPtr, false);
+}
+

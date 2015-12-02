@@ -59,8 +59,8 @@ typedef struct struct_app_up_client_str {
 	Int16       clientInterfaceIndex;
 	Int16       destInterfaceIndex;
 	AppUpNodeType nodeType;
-	AppUpClientPacketList* packetList;
-	pthread_mutex_t packetListMutex;
+	AppUpClientPacketList* packets;
+	pthread_mutex_t packetsMutex;
 	bool        sessionIsClosed;
 	clocktype   sessionStart;
 	clocktype   sessionFinish;
@@ -70,7 +70,7 @@ typedef struct struct_app_up_client_str {
 } AppDataUpClient;
 
 typedef enum enum_app_up_message_type {
-	APP_UP_MSG_DATA = 10
+	APP_UP_MSG_DATA = APP_UP_NODE_DATA_SITE
 } AppUpMessageType;
 
 typedef struct struct_app_up_message_header {
@@ -78,6 +78,20 @@ typedef struct struct_app_up_message_header {
 	Int32       itemSize;
 	AppUpClientDaemonDataChunkStr dataChunk;
 } AppUpMessageHeader;
+
+typedef enum enum_app_up_plan_task_status {
+	APP_UP_PLAN_TASK_INIT,
+	APP_UP_PLAN_TASK_WAIT,
+	APP_UP_PLAN_TASK_COMP
+} AppUpPlanTaskStatus;
+
+typedef struct struct_app_up_path_stop {
+	double      t;
+	Coordinates crds;
+	map<int, int>* lsAId;
+	map<int, int>* lsDId;
+	struct_app_up_path_stop* next;
+} AppUpPathStop;
 
 typedef struct struct_app_up_client_daemon_str {
 	Node*       firstNode;
@@ -87,10 +101,14 @@ typedef struct struct_app_up_client_daemon_str {
 	std::string* inputString;
 	std::string* applicationName;
 	AppUpClientDaemonDataChunkStr* dataChunks;
-	bool        test;
-	int         joinedId;
+	bool        test; // Initialize into test mode if plan not present
+	int         joinedAId;
 	map<int, int>* plan;
 	int         connAttempted;
+	AppUpPathStop* path;
+	Coordinates initPos;
+	int         timeoutId;
+	int         sending; // Number of data chunks prepared for sending
 } AppDataUpClientDaemon;
 
 void AppUpServerInit(
@@ -136,22 +154,28 @@ AppDataUpClient* AppUpClientGetClientPtr(
 	Node* node,
 	Int32 uniqueId);
 
+// Abandoned for virtual packets
+/*
 void AppUpClientSendNextPacket(
 		Node *node,
-		AppDataUpClient *clientPtr);
+		AppDataUpClient *clientPtr);*/
 
+// Abandoned for virtual packets
+/*
 char* AppUpClientNewDataItem(
 		Int32 itemSize,
 		Int32& fullSize,
 		int identifier,
 		int deadline,
-		float priority);
+		float priority);*/
 
+// Abandoned for virtual packets
+/*
 void AppUpClientSendItem(
 		Node* node,
 		AppDataUpClient *clientPtr,
 		char* item,
-		Int32 itemSize);
+		Int32 itemSize);*/
 
 char* AppUpClientNewVirtualDataItem(
 		Int32 itemSize,
@@ -202,12 +226,18 @@ void AppUpClientDaemonFinalize(Node *node, AppInfo *appInfo);
 
 AppDataUpClientDaemon* AppUpClientGetUpClientDaemon(Node *node);
 
-const float APP_UP_WIRELESS_CLOSE_RANGE = 0.0;
+const CoordinateType APP_UP_WIRELESS_CLOSE_RANGE = (CoordinateType)0;
 const int APP_UP_WIRELESS_AP_WAIT_TIME = 5;
 const int APP_UP_WIRELESS_MDC_WAIT_TIME = 5;
 const int APP_UP_OPEN_CONN_ATTEMPT_MAX = 15;
+const CoordinateType APP_UP_PATH_TOL = 1e-4;
+const CoordinateType APP_UP_PATH_SIMU_DISTANCE = (CoordinateType)1;
+//const clocktype APP_UP_PATH_SIMU_TIME = 100 * MILLI_SECOND;
+const int APP_UP_PATH_STOP_TIMEOUT = 15;
+const int APP_UP_PATH_STOP_TIMEOUT_2 = APP_UP_OPEN_CONN_ATTEMPT_MAX * 3;
 
 int AppUpClientDaemonGetNextDataChunk(AppDataUpClientDaemon* clientDaemonPtr);
+
 void AppUpClientDaemonSendNextDataChunk(
 		Node* node,
 		AppDataUpClientDaemon* clientDaemonPtr,
@@ -216,5 +246,35 @@ void AppUpClientDaemonSendNextDataChunk(
 		char* sourceString,
 		int waitTime,
 		char* daemonRecFileName);
+
+void AppUpClientDaemonSendNextDataChunk(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		int waitTime);
+
+void AppUpClientDaemonSetNextPathTimer(
+		Node* node,
+		clocktype interval,
+		bool init);
+
+void AppUpClientDaemonSetNextPathStopTimeout(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		clocktype interval);
+
+void AppUpClientDaemonMobilityModelProcess(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		bool init);
+
+bool AppUpClientDaemonCheckStop(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		bool timeoutFlag);
+
+void AppUpClientDaemonCompAtA(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		int joinedAId);
 
 #endif

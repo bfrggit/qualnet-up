@@ -5343,7 +5343,7 @@ int MacDot11ManagementJoinCompleted(
 	acnData.actionComment = NO_COMMENT;
 	TRACE_PrintTrace(node, msg, TRACE_MAC_LAYER,
 			PACKET_OUT, &acnData);
-	MESSAGE_Send(node, msg, TIME_ConvertToClock("0"));
+	MESSAGE_Send(node, msg, (clocktype)0);
 
     MacDot11ManagementSetState(
         node,

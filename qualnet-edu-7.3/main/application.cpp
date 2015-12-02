@@ -3314,7 +3314,8 @@ APP_InitializeApplications(
                 Address destAddr;
                 AppUpNodeType nodeType;
 
-                char nodeConfigFileName[MAX_STRING_LENGTH];
+                char nodePathFileName[MAX_STRING_LENGTH];
+                char nodePlanFileName[MAX_STRING_LENGTH];
                 char dataChunkIdString[MAX_STRING_LENGTH];
                 char dataChunkSizeString[MAX_STRING_LENGTH];
                 char dataChunkDeadlineString[MAX_STRING_LENGTH];
@@ -3344,13 +3345,14 @@ APP_InitializeApplications(
 				} else if (strcmp(nodeTypeString, "MDC") == 0) {
 					nodeType = APP_UP_NODE_MDC;
 					numValues += sscanf(appInput.inputStrings[i],
-							"%*s %*s %*s %*s %s",
-							nodeConfigFileName);
-					if (numValues != 4) {
+							"%*s %*s %*s %*s %s %s",
+							nodePathFileName,
+							nodePlanFileName);
+					if (numValues != 5) {
 						char errorString[MAX_STRING_LENGTH];
 						sprintf(errorString,
 								"Wrong UP configuration format!\n"
-								"UP <source> <dest> MDC <config>\n");
+								"UP <source> <dest> MDC <path> <plan>\n");
 						ERROR_ReportError(errorString);
 					}
 				} else if (strcmp(nodeTypeString, "DATA") == 0) {

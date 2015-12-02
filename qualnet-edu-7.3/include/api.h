@@ -903,8 +903,11 @@ enum
 	MSG_APP_UP,
 	MSG_APP_UP_FromMacJoinCompleted,
 	MSG_APP_UP_DataChunkDelivered,
+	MSG_APP_UP_DataChunkHeaderReceived,
 	MSG_APP_UP_DataChunkReceived,
 	MSG_APP_UP_TransportConnectionFailed,
+	MSG_APP_UP_PathTimer,
+	MSG_APP_UP_PathStopTimeout,
 
     /*
      * Any other message types which have to be added should be added before

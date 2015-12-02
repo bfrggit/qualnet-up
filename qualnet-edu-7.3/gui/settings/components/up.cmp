@@ -5,6 +5,7 @@
 	<variable name="Node Type" key="NODE-TYPE" type="Selection" default="MDC" keyvisible="false" optional="false">
 		<option value="CLOUD" name="Cloud Server" />
 		<option value="MDC" name="Mobile Data Collector">
+			<variable name="Path Specification" key="PATH" type="File" default="[Required]" keyvisible="false" />
 			<variable name="Plan Specification" key="PLAN" type="File" default="[Required]" keyvisible="false" />
 		</option>
 		<option value="DATA" name="Data Site">
