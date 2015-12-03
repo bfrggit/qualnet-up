@@ -650,7 +650,7 @@ void AppLayerUpClient(Node *node, Message *msg) {
 							clientPtr->dataChunk,
 							packetSize);
 				}
-				MEM_free(clientPtr->dataChunk);
+//				MEM_free(clientPtr->dataChunk);
 
 				//Trace Information
 				acnData.actionType = SEND;
@@ -1440,6 +1440,7 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 			upClientDaemon->dataChunks->size = dataChunkSize;
 			upClientDaemon->dataChunks->deadline = dataChunkDeadline;
 			upClientDaemon->dataChunks->priority = dataChunkPriority;
+			upClientDaemon->dataChunks->dirty = false;
 			upClientDaemon->dataChunks->next = NULL;
 		}
 	} else assert(false);
@@ -1504,7 +1505,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		if(!clientDaemonPtr) break;
 
 		clientDaemonPtr->connAttempted = 0;
-		clientDaemonPtr->sending = 0;
+//		clientDaemonPtr->sending = 0;
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
 			int bssAddrIdentifier = 0;
@@ -1668,6 +1669,14 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 //		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 //		sprintf(daemonRecFileName, "daemon_%s.out", node->hostname);
 
+		if(clientDaemonPtr->sending > 0) {
+			printf("UP client daemon: %s has ongoing task(s), "
+					"sending=%d\n",
+					node->hostname,
+					clientDaemonPtr->sending);
+			break;
+		}
+
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
 			if(clientDaemonPtr->test) {
 				printf("UP client daemon: %s will try to connect, "
@@ -1737,10 +1746,10 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		} else assert(false);
 		break; }
 	case MSG_APP_UP_DataChunkDelivered: {
-		int* chunkIdentifier;
+		int chunkIdentifier;
 		AppUpClientDaemonDataChunkStr* chunk;
 
-		chunkIdentifier = (int*)MESSAGE_ReturnInfo(msg);
+		chunkIdentifier = *(int*)MESSAGE_ReturnInfo(msg);
 		chunk = (AppUpClientDaemonDataChunkStr*)MESSAGE_ReturnPacket(msg);
 
 /*		char daemonRecFileName[MAX_STRING_LENGTH];
@@ -1756,12 +1765,18 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		clientDaemonPtr->connAttempted = 0;
 		clientDaemonPtr->sending -= 1;
 
+		printf("UP client daemon: %s delivered data chunk, "
+				"identifier=%d sending=%d\n",
+				node->hostname,
+				chunkIdentifier,
+				clientDaemonPtr->sending);
+
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
 			daemonRecFile.open(daemonRecFileName, ios::app);
 			daemonRecFile << "MDC" << " "
 					<< node->hostname
 					<< " " << "SENT DATA" << " "
-					<< *chunkIdentifier
+					<< chunkIdentifier
 					<< " " << "AT TIME" << " "
 					<< clockInSecond
 					<< std::endl;
@@ -1807,7 +1822,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				AppUpClientDaemonSendNextDataChunk(
 						node,
 						clientDaemonPtr,
-						0);
+						(clocktype)0);
 			}
 		}
 		break; }
@@ -1966,18 +1981,19 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		}*/
 		break; }
 	case MSG_APP_UP_TransportConnectionFailed: {
-		int* chunkIdentifier;
+		int chunkIdentifier;
 		AppUpClientDaemonDataChunkStr* chunk;
 
-		chunkIdentifier = (int*)MESSAGE_ReturnInfo(msg);
+		chunkIdentifier = *(int*)MESSAGE_ReturnInfo(msg);
 		chunk = (AppUpClientDaemonDataChunkStr*)MESSAGE_ReturnPacket(msg);
 
 //		clientDaemonPtr = AppUpClientGetUpClientDaemon(node);
 
+		clientDaemonPtr->sending -= 1;
 		printf("UP client daemon: %s failed to connect for delivery, "
 				"id=%d connAttempted=%d\n",
 				node->hostname,
-				*chunkIdentifier,
+				chunkIdentifier,
 				clientDaemonPtr->connAttempted);
 
 		map<int, int>* plan = clientDaemonPtr->plan;
@@ -1985,9 +2001,9 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC
 				&& (joinedAId < 0
-						|| (*chunkIdentifier > 0
-								&& plan->count(*chunkIdentifier) > 0
-								&& plan->at(*chunkIdentifier) != joinedAId))) {
+						|| (chunkIdentifier > 0
+								&& plan->count(chunkIdentifier) > 0
+								&& plan->at(chunkIdentifier) != joinedAId))) {
 			// No longer at the correct AP
 			;
 		} else
@@ -2019,31 +2035,50 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 					destString,
 					&destNodeId,
 					&destAddr);
-			printf("UP client daemon: %s will try to connect, "
+/*			printf("UP client daemon: %s will try to connect, "
 					"waitTime=%d\n",
 					node->hostname,
-					waitTime);
+					waitTime);*/
 //			TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 /*			if(clientDaemonPtr->nodeType == APP_UP_NODE_DATA_SITE
 					|| (clientDaemonPtr->nodeType == APP_UP_NODE_MDC
 							&& chunkIdentifier > 0)) {*/
-			if(*chunkIdentifier > 0) {
-				AppUpClientDaemonDataChunkStr* chunkToSend;
+			if(chunkIdentifier > 0) {
+				if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
+					AppUpClientDaemonDataChunkStr* chunkPtr;
 
-				chunkToSend = (AppUpClientDaemonDataChunkStr*)
-						MEM_malloc(sizeof(AppUpClientDaemonDataChunkStr));
-				memcpy(chunkToSend, chunk,
-						sizeof(AppUpClientDaemonDataChunkStr));
-				AppUpClientInit(
-						node,
-						sourceAddr,
-						destAddr,
-						clientDaemonPtr->applicationName->c_str(),
-						sourceString,
-						clientDaemonPtr->nodeType,
-						waitTime /*0*/,
-						chunkToSend);
+					for(chunkPtr = clientDaemonPtr->dataChunks;
+							chunkPtr;
+							chunkPtr = chunkPtr->next) {
+						if(chunkPtr->identifier == chunkIdentifier) {
+							chunkPtr->dirty = false;
+							break;
+						}
+					}
+					AppUpClientDaemonSendNextDataChunk(
+							node,
+							clientDaemonPtr,
+							(clocktype)0);
+				} else {
+					AppUpClientDaemonDataChunkStr* chunkToSend;
+
+					chunkToSend = (AppUpClientDaemonDataChunkStr*)
+							MEM_malloc(sizeof(AppUpClientDaemonDataChunkStr));
+					memcpy(chunkToSend, chunk,
+							sizeof(AppUpClientDaemonDataChunkStr));
+					clientDaemonPtr->sending += 1;
+					AppUpClientInit(
+							node,
+							sourceAddr,
+							destAddr,
+							clientDaemonPtr->applicationName->c_str(),
+							sourceString,
+							clientDaemonPtr->nodeType,
+							waitTime /*0*/,
+							chunkToSend);
+				}
 			} else if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
+				clientDaemonPtr->sending += 1;
 				AppUpClientInit(
 						node,
 						sourceAddr,
@@ -2055,21 +2090,19 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 						NULL);
 			}
 
-			if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
+/*			if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
 				daemonRecFile.open(daemonRecFileName, ios::app);
 				daemonRecFile << "MDC" << " "
 					<< node->hostname
 					<< " " << "REPR DATA" << " "
-					<< *chunkIdentifier
+					<< chunkIdentifier
 					<< " " << "AT TIME" << " "
 					<< clockInSecond
 					<< std::endl;
 				daemonRecFile.close();
-			}
+			}*/
 			++clientDaemonPtr->connAttempted;
 		} else {
-			clientDaemonPtr->sending -= 1;
-
 			if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
 				AppUpClientDaemonCompAtA(
 						node,
@@ -2150,22 +2183,26 @@ AppUpClientGetUpClientDaemon(Node *node)
 int AppUpClientDaemonGetNextDataChunk(AppDataUpClientDaemon* clientDaemonPtr) {
 //	std::list<pair<int, float> > chunks;
 	map<int, int>* plan = clientDaemonPtr->plan;
-	AppUpClientDaemonDataChunkStr* chunk;
+	AppUpClientDaemonDataChunkStr* chunkPtr;
 	int joinedAId = clientDaemonPtr->joinedAId;
 	int chunkId = -1;
 	float chunkPriority = 0.0;
 
 	if(joinedAId < 1) return chunkId; // -1
-	chunk = clientDaemonPtr->dataChunks;
-	while(chunk) {
-		if(plan->count(chunk->identifier) > 0
-		&& plan->at(chunk->identifier) == joinedAId) {
-			if(chunkId < 0 || chunkPriority < chunk->priority) {
-				chunkId = chunk->identifier;
-				chunkPriority = chunk->priority;
+//	chunk = clientDaemonPtr->dataChunks;
+//	while(chunk) {
+	for(chunkPtr = clientDaemonPtr->dataChunks;
+			chunkPtr;
+			chunkPtr = chunkPtr->next) {
+		if(plan->count(chunkPtr->identifier) > 0
+		&& plan->at(chunkPtr->identifier) == joinedAId
+		&& chunkPtr->dirty == false) {
+			if(chunkId < 0 || chunkPriority < chunkPtr->priority) {
+				chunkId = chunkPtr->identifier;
+				chunkPriority = chunkPtr->priority;
 			}
 		}
-		chunk = chunk->next;
+//		chunk = chunk->next;
 	}
 	return chunkId;
 }
@@ -2185,11 +2222,11 @@ void AppUpClientDaemonSendNextDataChunk(
 	TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 	chunkIdToSend = AppUpClientDaemonGetNextDataChunk(clientDaemonPtr);
 	if(chunkIdToSend > 0) {
-		AppUpClientDaemonDataChunkStr* chunkHeader;
-		AppUpClientDaemonDataChunkStr* chunkBefore;
-		AppUpClientDaemonDataChunkStr* chunkToSend;
+//		AppUpClientDaemonDataChunkStr* chunkHeader;
+//		AppUpClientDaemonDataChunkStr* chunkBefore;
+//		AppUpClientDaemonDataChunkStr* chunkToSend;
 
-		chunkHeader = (AppUpClientDaemonDataChunkStr*)
+/*		chunkHeader = (AppUpClientDaemonDataChunkStr*)
 				MEM_malloc(sizeof(AppUpClientDaemonDataChunkStr));
 		chunkHeader->next = clientDaemonPtr->dataChunks;
 		chunkBefore = chunkHeader;
@@ -2203,15 +2240,28 @@ void AppUpClientDaemonSendNextDataChunk(
 			clientDaemonPtr->dataChunks = chunkToSend->next;
 		} else {
 			chunkBefore->next = chunkToSend->next;
-		}
-		MEM_free(chunkHeader);
+		}*/
 
-		printf("UP client daemon: %s will try to connect, "
-				"waitTime=%d\n",
-				node->hostname,
-				waitTime);
-//		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
+		AppUpClientDaemonDataChunkStr* chunkPtr;
+
+		for(chunkPtr = clientDaemonPtr->dataChunks;
+				chunkPtr;
+				chunkPtr = chunkPtr->next) {
+			if(chunkPtr->identifier == chunkIdToSend) {
+				break;
+			}
+		}
+		assert(chunkPtr);
+		chunkPtr->dirty = true;
+//		MEM_free(chunkHeader);
+
 		clientDaemonPtr->sending += 1;
+		printf("UP client daemon: %s will try to connect, "
+				"waitTime=%d sending=%d\n",
+				node->hostname,
+				waitTime,
+				clientDaemonPtr->sending);
+//		TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
 		AppUpClientInit(
 				node,
 				sourceAddr,
@@ -2220,7 +2270,7 @@ void AppUpClientDaemonSendNextDataChunk(
 				sourceString,
 				clientDaemonPtr->nodeType,
 				waitTime,
-				chunkToSend);
+				chunkPtr);
 		daemonRecFile.open(daemonRecFileName, ios::app);
 		daemonRecFile << "MDC" << " "
 				<< node->hostname
@@ -2244,6 +2294,8 @@ void AppUpClientDaemonSendNextDataChunk(
 				<< std::endl;
 		daemonRecFile.close();
 		clientDaemonPtr->joinedAId = -1;*/
+		printf("UP client daemon: %s has nothing to send\n",
+				node->hostname);
 		AppUpClientDaemonCompAtA(
 				node,
 				clientDaemonPtr,

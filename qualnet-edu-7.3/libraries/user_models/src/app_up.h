@@ -16,6 +16,7 @@ typedef struct struct_app_up_client_daemon_data_chunk_str {
 	int         size; // KB
 	int         deadline;
 	float       priority;
+	bool        dirty;
 	struct_app_up_client_daemon_data_chunk_str* next;
 } AppUpClientDaemonDataChunkStr;
 
