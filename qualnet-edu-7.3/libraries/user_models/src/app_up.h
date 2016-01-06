@@ -110,7 +110,10 @@ typedef struct struct_app_up_client_daemon_str {
 	Coordinates initPos;
 	int         timeoutId;
 	int         sending; // Number of data chunks prepared for sending
+	int (*getNextDataChunk)(struct_app_up_client_daemon_str*);
 } AppDataUpClientDaemon;
+
+typedef int (*AppUpClientDaemonGetNextDataChunkType)(AppDataUpClientDaemon*);
 
 void AppUpServerInit(
 	Node *node,
@@ -237,11 +240,13 @@ const CoordinateType APP_UP_PATH_SIMU_DISTANCE = (CoordinateType)1;
 const int APP_UP_PATH_STOP_TIMEOUT = 15;
 const int APP_UP_PATH_STOP_TIMEOUT_2 = APP_UP_OPEN_CONN_ATTEMPT_MAX * 3;
 
-int AppUpClientDaemonGetNextDataChunk(AppDataUpClientDaemon* clientDaemonPtr);
+int AppUpClientDaemonGNDCEverything(AppDataUpClientDaemon* clientDaemonPtr);
+int AppUpClientDaemonGNDCPlanned(AppDataUpClientDaemon* clientDaemonPtr);
 
 void AppUpClientDaemonSendNextDataChunk(
 		Node* node,
 		AppDataUpClientDaemon* clientDaemonPtr,
+		AppUpClientDaemonGetNextDataChunkType getNextDataChunk,
 		Address sourceAddr,
 		Address destAddr,
 		char* sourceString,

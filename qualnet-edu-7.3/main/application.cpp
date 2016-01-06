@@ -3363,12 +3363,13 @@ APP_InitializeApplications(
 							dataChunkSizeString,
 							dataChunkDeadlineString,
 							dataChunkPriorityString);
-					if (numValues != 7) {
+					if (numValues != 7 && numValues != 4) { // Multiple chunks
 						char errorString[MAX_STRING_LENGTH];
 						sprintf(errorString,
 								"Wrong UP configuration format!\n"
 								"UP <source> <dest> DATA "
-								"<id> <size> <deadline> <priority>\n");
+								"<id> <size> <deadline> <priority>\n"
+								"UP <source> <dest> DATA <file>\n");
 						ERROR_ReportError(errorString);
 					}
 				} else {
