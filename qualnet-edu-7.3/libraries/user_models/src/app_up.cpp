@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include <pthread.h>
+#include <math.h>
 #include <iostream>
 #include <fstream>
 
@@ -239,6 +240,7 @@ AppDataUpClient* AppUpClientNewUpClient(
 	upClient->sessionStart = node->getNodeTime();
 	upClient->sessionFinish = node->getNodeTime();
 	upClient->stats = NULL;
+	upClient->tranStart = (clocktype)0;
 
 	if (appName) {
 		upClient->applicationName = new std::string(appName);
@@ -566,7 +568,7 @@ void AppLayerUpClient(Node *node, Message *msg) {
 			} else { // Connection successful
 				AppDataUpClient* clientPtr;
 				char* item;
-				Int32 itemSize = 1024 * 1024;
+				Int32 itemSize = APP_UP_MDC_TEST_DATA_SIZE * 1024;
 				Int32 fullSize;
 
 				clientPtr = AppUpClientUpdateUpClient(node, openResult);
@@ -587,6 +589,8 @@ void AppLayerUpClient(Node *node, Message *msg) {
 							clientPtr->dataChunk->deadline,
 							clientPtr->dataChunk->priority);
 				}
+				clientPtr->tranStart = node->getNodeTime();
+
 				// Changed for virtual packets
 //				AppUpClientSendItem(
 				AppUpClientSendVirtualItem(
@@ -630,9 +634,11 @@ void AppLayerUpClient(Node *node, Message *msg) {
 
 				Message* msg;
 				ActionData acnData;
-				int infoSize = sizeof(int);
+				int infoSize = sizeof(int) + sizeof(clocktype);
 				int packetSize = sizeof(AppUpClientDaemonDataChunkStr);
 				int chunkIdentifier;
+				clocktype uploadTime =
+						node->getNodeTime() - clientPtr->tranStart;
 
 				if(clientPtr->dataChunk) {
 					chunkIdentifier = clientPtr->dataChunk->identifier;
@@ -643,7 +649,10 @@ void AppLayerUpClient(Node *node, Message *msg) {
 						APP_UP_CLIENT_DAEMON /*APP_UP_CLIENT*/,
 						MSG_APP_UP_DataChunkDelivered);
 				MESSAGE_InfoAlloc(node, msg, infoSize);
-				memcpy(MESSAGE_ReturnInfo(msg), &chunkIdentifier, infoSize);
+				memcpy(MESSAGE_ReturnInfo(msg),
+						&chunkIdentifier, sizeof(int));
+				memcpy(MESSAGE_ReturnInfo(msg) + sizeof(int),
+						&uploadTime, sizeof(clocktype));
 				if(clientPtr->dataChunk) {
 					MESSAGE_PacketAlloc(node, msg, packetSize, TRACE_UP);
 					memcpy(MESSAGE_ReturnPacket(msg),
@@ -1259,6 +1268,13 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 	upClientDaemon->test = false;
 	upClientDaemon->dataChunks = NULL;
 	upClientDaemon->getNextDataChunk = NULL;
+	upClientDaemon->policy = APP_UP_ADAPTION_UNINITIALIZED;
+	upClientDaemon->specs = new std::map<int, AppUpAccessPointSpec*>;
+	upClientDaemon->currentRate = 0.0;
+	upClientDaemon->historyRates = new std::map<int, float>;
+	upClientDaemon->currentSizeTotal = 0;
+	upClientDaemon->currentTimeTotal = (clocktype)0;
+	upClientDaemon->lastAId = 0;
 
 	if (appName) {
 		upClientDaemon->applicationName = new std::string(appName);
@@ -1269,13 +1285,44 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 	if(nodeType == APP_UP_NODE_MDC) {
 		char pathFileName[MAX_STRING_LENGTH];
 		char planFileName[MAX_STRING_LENGTH];
+		char policyName[MAX_STRING_LENGTH];
+		char specFileName[MAX_STRING_LENGTH];
 
 		numValues = sscanf(inputString,
-				"%*s %*s %*s %*s %s %s",
+				"%*s %*s %*s %*s %s %s %s %s",
 				pathFileName,
-				planFileName);
-		assert(numValues == 2);
-		upClientDaemon->getNextDataChunk = AppUpClientDaemonGNDCPlanned;
+				planFileName,
+				policyName,
+				specFileName);
+		assert(numValues >= 2 && numValues <= 4);
+		if(numValues <= 2) {
+			upClientDaemon->policy = APP_UP_ADAPTION_STRICT_PLAN;
+			upClientDaemon->getNextDataChunk =
+						AppUpClientDaemonGNDCStrictPlan;
+		} else if(numValues == 3) {
+			if(strcmp(policyName,        "EVERYTHING" ) == 0
+				|| strcmp(policyName,    "OPPORTUNITY") == 0) {
+				upClientDaemon->policy = APP_UP_ADAPTION_OPPORTUNITY;
+				upClientDaemon->getNextDataChunk =
+						AppUpClientDaemonGNDCOpportunity;
+				assert(strcmp(planFileName, "-") == 0);
+			} else if(strcmp(policyName, "STRICT_PLAN") == 0) {
+				upClientDaemon->policy = APP_UP_ADAPTION_STRICT_PLAN;
+				upClientDaemon->getNextDataChunk =
+						AppUpClientDaemonGNDCStrictPlan;
+			}
+		} else if(numValues >= 4) {
+			if(strcmp(policyName,        "TIMELINE"   ) == 0) {
+				upClientDaemon->policy = APP_UP_ADAPTION_TIMELINE;
+				upClientDaemon->getNextDataChunk =
+						AppUpClientDaemonGNDCTimeline;
+			} else if(strcmp(policyName, "ADAPTIVE_GP") == 0) {
+				upClientDaemon->policy = APP_UP_ADAPTION_ADAPTIVE_GP;
+				upClientDaemon->getNextDataChunk =
+						AppUpClientDaemonGNDCAdaptiveGP;
+			}
+		} else assert(false);
+		assert(upClientDaemon->policy >= 0);
 
 		/* Read path */ {
 			ifstream pathFile;
@@ -1309,11 +1356,12 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 					int j;
 
 					pathFile >> numA;
-					assert(numA >= 0);
+					assert(numA >= 0 && numA < 2);
 					for(j = 0; j < numA && pathFile >> idA; ++j) {
 						assert(tmpStop->lsAId->count(idA) < 1);
 						tmpStop->lsAId->insert(
 								pair<int, int>(idA, APP_UP_PLAN_TASK_INIT));
+						upClientDaemon->lastAId = idA;
 					}
 					assert(j == numA);
 				}
@@ -1380,10 +1428,12 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 		}
 
 		if(strcmp(planFileName, "-") == 0) {
-			upClientDaemon->test = true;
+			if(upClientDaemon->policy == APP_UP_ADAPTION_OPPORTUNITY) {
+				; // Nothing here
+			} else if(upClientDaemon->policy == APP_UP_ADAPTION_STRICT_PLAN) {
+				upClientDaemon->test = true;
+			} else assert(strcmp(planFileName, "-") != 0);
 		} else { // Read plan
-//			upClientDaemon->test = false;
-
 			ifstream planFile;
 			int numDataChunks = 0;
 			int linesRead = 0;
@@ -1411,6 +1461,56 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 					it != upClientDaemon->plan->end();
 					++it) {
 				printf("%12d -> %d\n", it->first, it->second);
+			}
+		}
+
+		// Load AP specification file
+		if(numValues >= 4) {
+			ifstream specFile;
+			int numA = 0;
+			int linesRead = 0;
+			int idA;
+			int estRate = 0;
+			float estCompTime = 0;
+
+			specFile.open(specFileName);
+			assert(specFile.is_open());
+			specFile >> numA;
+			assert(numA >= 0);
+			printf("UP client daemon: %s will read prior specifications of "
+					"%d access points\n",
+					node->hostname,
+					numA);
+			while(specFile >> idA >> estRate >> estCompTime) {
+				if(idA <= 0 || estRate <= 0 || estCompTime <= 0.0) {
+					printf("UP client daemon: %s "
+							"ignored invalid access point specifications\n",
+							node->hostname);
+				} else {
+					AppUpAccessPointSpec* specPtr = new AppUpAccessPointSpec;
+
+					specPtr->estRate = estRate;
+					specPtr->estCompTime = estCompTime;
+					assert(upClientDaemon->specs->count(idA) < 1);
+					upClientDaemon->specs->insert(
+							pair<int, AppUpAccessPointSpec*>(idA, specPtr));
+				}
+				++linesRead;
+			}
+			specFile.close();
+			assert(linesRead == numA);
+			printf("UP client daemon: %s read prior specifications of "
+					"access points from file: %s\n",
+					node->hostname,
+					specFileName);
+			for(map<int, AppUpAccessPointSpec*>::iterator it =
+					upClientDaemon->specs->begin();
+					it != upClientDaemon->specs->end();
+					++it) {
+				printf("%12d: estRate=%d estCompTime=%.2f\n",
+						it->first,
+						it->second->estRate,
+						it->second->estCompTime);
 			}
 		}
 	} else if(nodeType == APP_UP_NODE_DATA_SITE) {
@@ -1456,7 +1556,7 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 				upClientDaemon->dataChunks->size = dataChunkSize;
 				upClientDaemon->dataChunks->deadline = dataChunkDeadline;
 				upClientDaemon->dataChunks->priority = dataChunkPriority;
-				upClientDaemon->dataChunks->dirty = false;
+				upClientDaemon->dataChunks->dirty = 0;
 				upClientDaemon->dataChunks->next = NULL;
 			}
 		} else { // Multiple data chunks at same data site
@@ -1497,7 +1597,7 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 					upClientDaemon->dataChunks->size = dataChunkSize;
 					upClientDaemon->dataChunks->deadline = dataChunkDeadline;
 					upClientDaemon->dataChunks->priority = dataChunkPriority;
-					upClientDaemon->dataChunks->dirty = false;
+					upClientDaemon->dataChunks->dirty = 0;
 					upClientDaemon->dataChunks->next = lastChunkPtr;
 				}
 				++linesRead;
@@ -1588,6 +1688,15 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 
 			AppUpPathStop* nextStop = clientDaemonPtr->path;
 			int joinedAId = clientDaemonPtr->joinedAId;
+
+			// Initialize dynamic statistics
+			clientDaemonPtr->currentRate = 0.0;
+			if(clientDaemonPtr->specs->count(joinedAId) > 0) {
+				clientDaemonPtr->currentRate =
+						clientDaemonPtr->specs->at(joinedAId)->estRate;
+			}
+			clientDaemonPtr->currentSizeTotal = 0;
+			clientDaemonPtr->currentTimeTotal = (clocktype)0;
 
 			// Mark corresponding task as going
 			assert(nextStop);
@@ -1781,9 +1890,11 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		break; }
 	case MSG_APP_UP_DataChunkDelivered: {
 		int chunkIdentifier;
+		clocktype uploadTime;
 		AppUpClientDaemonDataChunkStr* chunk;
 
 		chunkIdentifier = *(int*)MESSAGE_ReturnInfo(msg);
+		uploadTime = *(clocktype*)(MESSAGE_ReturnInfo(msg) + sizeof(int));
 		chunk = (AppUpClientDaemonDataChunkStr*)MESSAGE_ReturnPacket(msg);
 
 /*		char daemonRecFileName[MAX_STRING_LENGTH];
@@ -1806,6 +1917,27 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				clientDaemonPtr->sending);
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC) {
+			// Update dynamic statistics
+			int chunkSize = APP_UP_MDC_TEST_DATA_SIZE;
+			float averageRate;
+
+			if(chunkIdentifier > 0) chunkSize = chunk->size;
+			averageRate = chunkSize / ((double)uploadTime / SECOND);
+
+			if(averageRate * 0 == 0.0) { // Avoid inf or NaN
+				clientDaemonPtr->currentRate =
+						clientDaemonPtr->currentRate * 0.2
+						+ averageRate * 0.8;
+			}
+			clientDaemonPtr->currentSizeTotal += chunkSize;
+			clientDaemonPtr->currentTimeTotal += uploadTime;
+			printf("UP client daemon: %s delivered data chunk, "
+					"uploadTime=%.2f averageRate=%.2f currentRate=%.2f\n",
+					node->hostname,
+					(double)uploadTime / SECOND,
+					averageRate,
+					clientDaemonPtr->currentRate);
+
 			daemonRecFile.open(daemonRecFileName, ios::app);
 			daemonRecFile << "MDC" << " "
 					<< node->hostname
@@ -1815,6 +1947,18 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 					<< clockInSecond
 					<< std::endl;
 			daemonRecFile.close();
+		}
+
+		if(chunkIdentifier > 0) {
+			for(AppUpClientDaemonDataChunkStr* chunkPtr =
+					clientDaemonPtr->dataChunks;
+					chunkPtr;
+					chunkPtr = chunkPtr->next) {
+				if(chunkPtr->identifier == chunkIdentifier) {
+					chunkPtr->dirty |= 2; // Set finish bit
+					break;
+				}
+			}
 		}
 
 		if(clientDaemonPtr->test) {
@@ -1902,7 +2046,7 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 		memcpy(chunkToAdd, chunk, sizeof(AppUpClientDaemonDataChunkStr));
 
 		chunkToAdd->next = clientDaemonPtr->dataChunks;
-		chunkToAdd->dirty = false;
+		chunkToAdd->dirty = 0;
 		clientDaemonPtr->dataChunks = chunkToAdd;
 //		assert(nextStop);
 		if(!nextStop) {
@@ -1995,19 +2139,20 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 
 		clientDaemonPtr->sending -= 1;
 		printf("UP client daemon: %s failed to connect for delivery, "
-				"id=%d connAttempted=%d\n",
+				"id=%d connAttempted=%d sending=%d\n",
 				node->hostname,
 				chunkIdentifier,
-				clientDaemonPtr->connAttempted);
+				clientDaemonPtr->connAttempted,
+				clientDaemonPtr->sending);
 
 		map<int, int>* plan = clientDaemonPtr->plan;
 		int joinedAId = clientDaemonPtr->joinedAId;
 
 		if(clientDaemonPtr->nodeType == APP_UP_NODE_MDC
-				&& (joinedAId < 0
+				&& (joinedAId < 0 /*
 						|| (chunkIdentifier > 0
-								&& plan->count(chunkIdentifier) > 0
-								&& plan->at(chunkIdentifier) != joinedAId))) {
+						&& plan->count(chunkIdentifier) > 0
+						&& plan->at(chunkIdentifier) != joinedAId0)*/)) {
 			// No longer at the correct AP
 			;
 		} else
@@ -2045,13 +2190,12 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 					waitTime);*/
 
 			if(chunkIdentifier > 0) {
-				AppUpClientDaemonDataChunkStr* chunkPtr;
-
-				for(chunkPtr = clientDaemonPtr->dataChunks;
+				for(AppUpClientDaemonDataChunkStr* chunkPtr =
+						clientDaemonPtr->dataChunks;
 						chunkPtr;
 						chunkPtr = chunkPtr->next) {
 					if(chunkPtr->identifier == chunkIdentifier) {
-						chunkPtr->dirty = false;
+						chunkPtr->dirty &= -2; // Reset work bit
 						break;
 					}
 				}
@@ -2089,7 +2233,8 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 				AppUpClientDaemonCompAtA(
 						node,
 						clientDaemonPtr,
-						joinedAId);
+						joinedAId,
+						true);
 			}
 		}
 		break; }
@@ -2162,16 +2307,17 @@ AppUpClientGetUpClientDaemon(Node *node)
 	return NULL;
 }
 
-int AppUpClientDaemonGNDCEverything(AppDataUpClientDaemon* clientDaemonPtr) {
-	AppUpClientDaemonDataChunkStr* chunkPtr;
+int AppUpClientDaemonGNDCEverything(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr) {
 	int chunkId = -1;
 	int chunkDeadline = -1;
 	float chunkPriority = 0.0;
 
-	for(chunkPtr = clientDaemonPtr->dataChunks;
+	for(AppUpClientDaemonDataChunkStr* chunkPtr = clientDaemonPtr->dataChunks;
 			chunkPtr;
 			chunkPtr = chunkPtr->next) {
-		if(chunkPtr->dirty == false) {
+		if(chunkPtr->dirty == 0) {
 			if(chunkId < 0 || chunkPriority < chunkPtr->priority
 					|| (chunkPriority == chunkPtr->priority
 							&& chunkDeadline > chunkPtr->deadline)) {
@@ -2184,21 +2330,22 @@ int AppUpClientDaemonGNDCEverything(AppDataUpClientDaemon* clientDaemonPtr) {
 	return chunkId;
 }
 
-int AppUpClientDaemonGNDCPlanned(AppDataUpClientDaemon* clientDaemonPtr) {
+int AppUpClientDaemonGNDCStrictPlan(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr) {
 	map<int, int>* plan = clientDaemonPtr->plan;
-	AppUpClientDaemonDataChunkStr* chunkPtr;
 	int joinedAId = clientDaemonPtr->joinedAId;
 	int chunkId = -1;
 	int chunkDeadline = -1;
 	float chunkPriority = 0.0;
 
 	if(joinedAId < 1) return chunkId; // -1
-	for(chunkPtr = clientDaemonPtr->dataChunks;
+	for(AppUpClientDaemonDataChunkStr* chunkPtr = clientDaemonPtr->dataChunks;
 			chunkPtr;
 			chunkPtr = chunkPtr->next) {
 		if(plan->count(chunkPtr->identifier) > 0
 		&& plan->at(chunkPtr->identifier) == joinedAId
-		&& chunkPtr->dirty == false) {
+		&& chunkPtr->dirty == 0) {
 			if(chunkId < 0 || chunkPriority < chunkPtr->priority
 					|| (chunkPriority == chunkPtr->priority
 							&& chunkDeadline > chunkPtr->deadline)) {
@@ -2208,6 +2355,239 @@ int AppUpClientDaemonGNDCPlanned(AppDataUpClientDaemon* clientDaemonPtr) {
 			}
 		}
 	}
+	return chunkId;
+}
+
+int AppUpClientDaemonGNDCTimeline(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr) {
+	int joinedAId = clientDaemonPtr->joinedAId;
+	int chunkId = -1;
+	map<int, int>* plan = clientDaemonPtr->plan;
+	int numChunksThisAId = 0;
+	float estCompTime = 0.0;
+
+	if(joinedAId < 1) return chunkId; // -1
+	if(clientDaemonPtr->specs->count(joinedAId) > 0) {
+		estCompTime = clientDaemonPtr->specs->at(joinedAId)->estCompTime;
+	}
+	for(map<int, int>::iterator it = plan->begin(); it != plan->end(); ++it) {
+		if(it->second == joinedAId) {
+			++numChunksThisAId;
+		}
+	}
+
+	bool left = false;
+	int chunkDeadline = -1;
+	float chunkPriority = 0.0;
+
+	for(AppUpClientDaemonDataChunkStr* chunkPtr = clientDaemonPtr->dataChunks;
+			chunkPtr;
+			chunkPtr = chunkPtr->next) {
+		if(plan->count(chunkPtr->identifier) > 0
+		&& plan->at(chunkPtr->identifier) == joinedAId
+		&& (chunkPtr->dirty & 2) == 0) {
+			// This chunk is planned here and not uploaded yet
+			left = true;
+			if((chunkPtr->dirty & 1) != 0)
+				continue;
+		} else continue;
+
+		// Do not choose it if completion time is to be exceeded
+		if((double)node->getNodeTime() / SECOND
+				+ chunkPtr->size / clientDaemonPtr->currentRate
+			> estCompTime + APP_UP_GNDC_TIMELINE_GRACE_PERIOD) {
+			continue;
+		}
+
+		if(chunkId < 1 || chunkPriority < chunkPtr->priority
+				|| (chunkPriority == chunkPtr->priority
+						&& chunkDeadline > chunkPtr->deadline)) {
+			chunkId = chunkPtr->identifier;
+			chunkDeadline = chunkPtr->deadline;
+			chunkPriority = chunkPtr->priority;
+		}
+	}
+	if(chunkId > 0) return chunkId;
+
+	if(!left) { // All chunks in plan are uploaded
+		bool chunkMeetDeadline = false;
+		int chunkSize = -1;
+
+		for(AppUpClientDaemonDataChunkStr* chunkPtr = clientDaemonPtr->dataChunks;
+				chunkPtr;
+				chunkPtr = chunkPtr->next) {
+			float estUpTime = (double)node->getNodeTime() / SECOND
+					+ chunkPtr->size / clientDaemonPtr->currentRate;
+			bool meetDeadline = estUpTime <= chunkPtr->deadline;
+
+			// Do not choose it if completion time is to be exceeded
+			if(estUpTime > estCompTime) {
+				continue;
+			}
+
+			//Try to get a small chunk with high priority
+			if(chunkPtr->dirty == 0) {
+				if(chunkId < 1 || (!chunkMeetDeadline && meetDeadline)
+						|| chunkPriority < chunkPtr->priority
+						|| (chunkPriority == chunkPtr->priority
+								&& chunkSize > chunkPtr->size)) {
+					chunkId = chunkPtr->identifier;
+					chunkPriority = chunkPtr->priority;
+					chunkSize = chunkPtr->size;
+				}
+			}
+		}
+	}
+	if(chunkId > 0) return chunkId;
+
+	// If this is last opportunity, upload everything
+	if(AppUpClientDaemonIsAtLastA(node, clientDaemonPtr))
+		chunkId = AppUpClientDaemonGNDCEverything(node, clientDaemonPtr);
+	return chunkId;
+}
+int AppUpClientDaemonGNDCAdaptiveGP(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr) {
+	int joinedAId = clientDaemonPtr->joinedAId;
+	int chunkId = -1;
+	map<int, int>* plan = clientDaemonPtr->plan;
+	int numChunksThisAId = 0;
+	float estCompTime = 0.0;
+
+	// Evaluate history data
+	map<int, float>* history = clientDaemonPtr->historyRates;
+	int historyEvalDif1 = 0;
+	int historyEvalDif2 = 0;
+	int historyEvalComp =
+			round((clientDaemonPtr->currentRate - 300) / APP_UP_GNDC_RATE_STEP);
+
+	if(historyEvalComp < 0) historyEvalComp = 0;
+	if(history->size() > 0) {
+		vector<float> historyDiff;
+		float sumDiff = 0.0;
+
+		for(map<int, float>::iterator it = history->begin();
+				it != history->end();
+				++it) {
+			if(clientDaemonPtr->specs->count(it->first) > 0) {
+				historyDiff.push_back(it->second
+						- clientDaemonPtr->specs->at(it->first)->estRate);
+				sumDiff += round(abs(it->second
+						- clientDaemonPtr->specs->at(it->first)->estRate)
+								/ APP_UP_GNDC_RATE_STEP);
+			}
+		}
+		for(unsigned int k = historyDiff.size() - 1; k >= 0; --k) {
+			if(round(historyDiff[k] / APP_UP_GNDC_RATE_STEP) < 0) {
+				historyEvalDif1 +=
+						round(historyDiff[k] / APP_UP_GNDC_RATE_STEP);
+			} else break;
+		}
+		if(historyEvalDif1 >= 0) {
+			historyEvalDif1 = historyDiff[historyDiff.size() - 1];
+		}
+		historyEvalDif2 = sumDiff / historyDiff.size();
+
+		// Evaluate actual rate history
+		vector<float> historyComp;
+		float sumComp = 0.0;
+
+		for(map<int, float>::iterator it = history->begin();
+				it != history->end();
+				++it) {
+			if(clientDaemonPtr->specs->count(it->first) > 0) {
+				historyComp.push_back(clientDaemonPtr->currentRate
+						- it->second);
+				sumComp += round(clientDaemonPtr->currentRate - it->second)
+						/ APP_UP_GNDC_RATE_STEP;
+			}
+		}
+		historyEvalComp += sumComp / historyComp.size();
+	}
+	// Determine grace period
+	float gracePeriod = round(APP_UP_GNDC_ADAPTIVE_GRACE_PERIOD
+			* log2(numChunksThisAId + 1)
+			* (2 + abs(historyEvalDif1) + historyEvalDif2 * historyEvalComp));
+
+	if(joinedAId < 1) return chunkId; // -1
+	if(clientDaemonPtr->specs->count(joinedAId) > 0) {
+		estCompTime = clientDaemonPtr->specs->at(joinedAId)->estCompTime;
+	}
+	for(map<int, int>::iterator it = plan->begin(); it != plan->end(); ++it) {
+		if(it->second == joinedAId) {
+			++numChunksThisAId;
+		}
+	}
+
+	bool left = false;
+	int chunkDeadline = -1;
+	float chunkPriority = 0.0;
+
+	for(AppUpClientDaemonDataChunkStr* chunkPtr = clientDaemonPtr->dataChunks;
+			chunkPtr;
+			chunkPtr = chunkPtr->next) {
+		if(plan->count(chunkPtr->identifier) > 0
+		&& plan->at(chunkPtr->identifier) == joinedAId
+		&& (chunkPtr->dirty & 2) == 0) {
+			// This chunk is planned here and not uploaded yet
+			left = true;
+			if((chunkPtr->dirty & 1) != 0)
+				continue;
+		} else continue;
+
+		// Do not choose it if completion time is to be exceeded
+		if((double)node->getNodeTime() / SECOND
+				+ chunkPtr->size / clientDaemonPtr->currentRate
+			> estCompTime + gracePeriod) {
+			continue;
+		}
+
+		if(chunkId < 1 || chunkPriority < chunkPtr->priority
+				|| (chunkPriority == chunkPtr->priority
+						&& chunkDeadline > chunkPtr->deadline)) {
+			chunkId = chunkPtr->identifier;
+			chunkDeadline = chunkPtr->deadline;
+			chunkPriority = chunkPtr->priority;
+		}
+	}
+	if(chunkId > 0) return chunkId;
+
+	if(!left) { // All chunks in plan are uploaded
+		bool chunkMeetDeadline = false;
+		int chunkSize = -1;
+
+		for(AppUpClientDaemonDataChunkStr* chunkPtr = clientDaemonPtr->dataChunks;
+				chunkPtr;
+				chunkPtr = chunkPtr->next) {
+			float estUpTime = (double)node->getNodeTime() / SECOND
+					+ chunkPtr->size / clientDaemonPtr->currentRate;
+			bool meetDeadline = estUpTime <= chunkPtr->deadline;
+
+			// Do not choose it if completion time is to be exceeded
+			if(estUpTime > estCompTime
+					+ (historyEvalDif1 > 0 ? gracePeriod : 0)) {
+				continue;
+			}
+
+			//Try to get a small chunk with high priority
+			if(chunkPtr->dirty == 0) {
+				if(chunkId < 1 || (!chunkMeetDeadline && meetDeadline)
+						|| chunkPriority < chunkPtr->priority
+						|| (chunkPriority == chunkPtr->priority
+								&& chunkSize > chunkPtr->size)) {
+					chunkId = chunkPtr->identifier;
+					chunkPriority = chunkPtr->priority;
+					chunkSize = chunkPtr->size;
+				}
+			}
+		}
+	}
+	if(chunkId > 0) return chunkId;
+
+	// If this is last opportunity, upload everything
+	if(AppUpClientDaemonIsAtLastA(node, clientDaemonPtr))
+		chunkId = AppUpClientDaemonGNDCEverything(node, clientDaemonPtr);
 	return chunkId;
 }
 
@@ -2225,7 +2605,7 @@ void AppUpClientDaemonSendNextDataChunk(
 	ofstream daemonRecFile;
 
 	TIME_PrintClockInSecond(node->getNodeTime(), clockInSecond);
-	chunkIdToSend = getNextDataChunk(clientDaemonPtr);
+	chunkIdToSend = getNextDataChunk(node, clientDaemonPtr);
 	if(chunkIdToSend > 0) {
 		AppUpClientDaemonDataChunkStr* chunkPtr;
 
@@ -2237,7 +2617,7 @@ void AppUpClientDaemonSendNextDataChunk(
 			}
 		}
 		assert(chunkPtr);
-		chunkPtr->dirty = true;
+		chunkPtr->dirty |= 1; // Set work bit
 //		MEM_free(chunkHeader);
 
 		clientDaemonPtr->sending += 1;
@@ -2436,6 +2816,8 @@ void AppUpClientDaemonMobilityModelProcess(
 					if(clientDaemonPtr->sending < 1
 							&&clientDaemonPtr->joinedAId > 0
 							&&stopNext->lsAId->size() > 0) {
+						printf("UP client daemon: %s will try to send\n",
+								node->hostname);
 						AppUpClientDaemonSendNextDataChunk(
 								node,
 								clientDaemonPtr,
@@ -2446,6 +2828,11 @@ void AppUpClientDaemonMobilityModelProcess(
 						if(stopNext->lsDId->size() > 0) {
 							timeout = APP_UP_PATH_STOP_TIMEOUT_2;
 						}
+						printf("UP client daemon: %s will try to wait, "
+								"sending=%d joinedAId=%d\n",
+								node->hostname,
+								clientDaemonPtr->sending,
+								clientDaemonPtr->joinedAId);
 						AppUpClientDaemonSetNextPathStopTimeout(
 								node,
 								clientDaemonPtr,
@@ -2526,6 +2913,7 @@ bool AppUpClientDaemonCheckStop(
 					node->hostname);
 		} else {
 			clientDaemonPtr->timeoutId += 1;
+			clientDaemonPtr->joinedAId = -1;
 
 			printf("\033[1;33m"
 					"UP client daemon: %s completed at (%.1f, %.1f, %.1f)\n"
@@ -2550,7 +2938,8 @@ bool AppUpClientDaemonCheckStop(
 void AppUpClientDaemonCompAtA(
 		Node* node,
 		AppDataUpClientDaemon* clientDaemonPtr,
-		int joinedAId) {
+		int joinedAId,
+		bool compInFailure) {
 	char clockInSecond[MAX_STRING_LENGTH];
 	char daemonRecFileName[MAX_STRING_LENGTH];
 	ofstream daemonRecFile;
@@ -2582,6 +2971,34 @@ void AppUpClientDaemonCompAtA(
 	}
 	clientDaemonPtr->timeoutId += 1;
 
+	for(AppUpClientDaemonDataChunkStr* chunkPtr =
+			clientDaemonPtr->dataChunks;
+			chunkPtr;
+			chunkPtr = chunkPtr->next) {
+		chunkPtr->dirty &= -2; // Reset work bit
+	}
+
+	// Finalize dynamic statistics
+	float actRate = actRate = clientDaemonPtr->currentSizeTotal
+			/ ((double)clientDaemonPtr->currentTimeTotal / SECOND);;
+	map<int, float>* historyPtr = clientDaemonPtr->historyRates;
+
+	if(compInFailure) actRate = 0.0;
+	if(actRate >= 0) {
+		if(historyPtr->count(joinedAId) < 1) {
+			historyPtr->insert(pair<int, float>(joinedAId, actRate));
+		} else if(clientDaemonPtr->currentSizeTotal > 0) { // XXX
+			historyPtr->at(joinedAId) = actRate;
+		}
+	}
+
+	printf("UP client daemon: %s completed with AP, "
+			"sizeTotal=%d timeTotal=%.2f actRate=%.2f\n",
+			node->hostname,
+			clientDaemonPtr->currentSizeTotal,
+			(double)clientDaemonPtr->currentTimeTotal / SECOND,
+			actRate);
+
 	AppUpClientDaemonSetNextPathStopTimeout(
 			node,
 			clientDaemonPtr,
@@ -2604,6 +3021,42 @@ void AppUpClientDaemonCompAtA(
 			<< std::endl;
 	daemonRecFile.close();
 
+	if(AppUpClientDaemonIsAtLastA(node, clientDaemonPtr)) {
+		printf("UP client daemon: %s completed with last AP\n",
+				node->hostname);
+		for(map<int, float>::iterator it = clientDaemonPtr->historyRates->begin();
+				it != clientDaemonPtr->historyRates->end();
+				++it) {
+			printf("%12d: actRate=%.2f\n", it->first, it->second);
+		}
+	}
+
 	AppUpClientDaemonCheckStop(node, clientDaemonPtr, false);
+}
+
+void AppUpClientDaemonCompAtA(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
+		int joinedAId) {
+	AppUpClientDaemonCompAtA(node, clientDaemonPtr, joinedAId, false);
+}
+
+/*bool AppUpClientDaemonIsAtLastA(Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr) {
+	AppUpPathStop* nextStop = clientDaemonPtr->path;
+
+	if(nextStop == NULL) return false;
+	if(nextStop->lsAId->size() < 1) return false;
+	for(AppUpPathStop* ptrStop = nextStop->next;
+			ptrStop;
+			ptrStop = ptrStop->next) {
+		if(nextStop->lsAId->size() > 0) return false;
+	}
+	return true;
+}*/
+
+bool AppUpClientDaemonIsAtLastA(Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr) {
+	return clientDaemonPtr->joinedAId == clientDaemonPtr->lastAId;
 }
 

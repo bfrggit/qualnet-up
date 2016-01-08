@@ -16,7 +16,7 @@ typedef struct struct_app_up_client_daemon_data_chunk_str {
 	int         size; // KB
 	int         deadline;
 	float       priority;
-	bool        dirty;
+	char        dirty;
 	struct_app_up_client_daemon_data_chunk_str* next;
 } AppUpClientDaemonDataChunkStr;
 
@@ -68,6 +68,7 @@ typedef struct struct_app_up_client_str {
 	STAT_AppStatistics* stats;
 	std::string* applicationName;
 	AppUpClientDaemonDataChunkStr* dataChunk;
+	clocktype   tranStart;
 } AppDataUpClient;
 
 typedef enum enum_app_up_message_type {
@@ -86,6 +87,15 @@ typedef enum enum_app_up_plan_task_status {
 	APP_UP_PLAN_TASK_COMP
 } AppUpPlanTaskStatus;
 
+typedef enum enum_app_up_adaption_policy {
+	APP_UP_ADAPTION_UNINITIALIZED = -1,
+	APP_UP_ADAPTION_EVERYTHING,
+	APP_UP_ADAPTION_OPPORTUNITY = APP_UP_ADAPTION_EVERYTHING,
+	APP_UP_ADAPTION_STRICT_PLAN,
+	APP_UP_ADAPTION_TIMELINE,
+	APP_UP_ADAPTION_ADAPTIVE_GP
+} AppUpAdaptionPolicy;
+
 typedef struct struct_app_up_path_stop {
 	double      t;
 	Coordinates crds;
@@ -93,6 +103,11 @@ typedef struct struct_app_up_path_stop {
 	map<int, int>* lsDId;
 	struct_app_up_path_stop* next;
 } AppUpPathStop;
+
+typedef struct struct_app_up_access_point_spec {
+	int         estRate;
+	float       estCompTime;
+} AppUpAccessPointSpec;
 
 typedef struct struct_app_up_client_daemon_str {
 	Node*       firstNode;
@@ -110,10 +125,19 @@ typedef struct struct_app_up_client_daemon_str {
 	Coordinates initPos;
 	int         timeoutId;
 	int         sending; // Number of data chunks prepared for sending
-	int (*getNextDataChunk)(struct_app_up_client_daemon_str*);
+	int (*getNextDataChunk)(Node*, struct_app_up_client_daemon_str*);
+	AppUpAdaptionPolicy policy;
+	map<int, AppUpAccessPointSpec*>* specs;
+	float       currentRate;
+	map<int, float>* historyRates;
+	int         currentSizeTotal;
+	clocktype   currentTimeTotal;
+	int         lastAId;
 } AppDataUpClientDaemon;
 
-typedef int (*AppUpClientDaemonGetNextDataChunkType)(AppDataUpClientDaemon*);
+typedef int (*AppUpClientDaemonGetNextDataChunkType)(
+		Node*,
+		AppDataUpClientDaemon*);
 
 void AppUpServerInit(
 	Node *node,
@@ -230,6 +254,7 @@ void AppUpClientDaemonFinalize(Node *node, AppInfo *appInfo);
 
 AppDataUpClientDaemon* AppUpClientGetUpClientDaemon(Node *node);
 
+const int APP_UP_MDC_TEST_DATA_SIZE = 1024; // KB
 const CoordinateType APP_UP_WIRELESS_CLOSE_RANGE = (CoordinateType)0;
 const int APP_UP_WIRELESS_AP_WAIT_TIME = 5;
 const int APP_UP_WIRELESS_MDC_WAIT_TIME = 5;
@@ -239,9 +264,28 @@ const CoordinateType APP_UP_PATH_SIMU_DISTANCE = (CoordinateType)1;
 //const clocktype APP_UP_PATH_SIMU_TIME = 100 * MILLI_SECOND;
 const int APP_UP_PATH_STOP_TIMEOUT = 15;
 const int APP_UP_PATH_STOP_TIMEOUT_2 = APP_UP_OPEN_CONN_ATTEMPT_MAX * 3;
+const float APP_UP_GNDC_TIMELINE_GRACE_PERIOD = 60.0;
+const float APP_UP_GNDC_ADAPTIVE_GRACE_PERIOD = 10.0;
+const float APP_UP_GNDC_RATE_STEP = 50.0; // KB/s
 
-int AppUpClientDaemonGNDCEverything(AppDataUpClientDaemon* clientDaemonPtr);
-int AppUpClientDaemonGNDCPlanned(AppDataUpClientDaemon* clientDaemonPtr);
+int AppUpClientDaemonGNDCEverything(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr);
+
+int AppUpClientDaemonGNDCStrictPlan(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr);
+
+int AppUpClientDaemonGNDCTimeline(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr);
+
+int AppUpClientDaemonGNDCAdaptiveGP(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr);
+
+const AppUpClientDaemonGetNextDataChunkType
+    AppUpClientDaemonGNDCOpportunity = AppUpClientDaemonGNDCEverything;
 
 void AppUpClientDaemonSendNextDataChunk(
 		Node* node,
@@ -281,6 +325,15 @@ bool AppUpClientDaemonCheckStop(
 void AppUpClientDaemonCompAtA(
 		Node* node,
 		AppDataUpClientDaemon* clientDaemonPtr,
+		int joinedAId,
+		bool compInFailure);
+
+void AppUpClientDaemonCompAtA(
+		Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr,
 		int joinedAId);
+
+bool AppUpClientDaemonIsAtLastA(Node* node,
+		AppDataUpClientDaemon* clientDaemonPtr);
 
 #endif
