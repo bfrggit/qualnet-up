@@ -2478,7 +2478,7 @@ int AppUpClientDaemonGNDCAdaptiveGP(
 								/ APP_UP_GNDC_RATE_STEP);
 			}
 		}
-		for(unsigned int k = historyDiff.size() - 1; k >= 0; --k) {
+		for(int k = historyDiff.size() - 1; k >= 0; --k) {
 			if(round(historyDiff[k] / APP_UP_GNDC_RATE_STEP) < 0) {
 				historyEvalDif1 +=
 						round(historyDiff[k] / APP_UP_GNDC_RATE_STEP);
@@ -2505,6 +2505,7 @@ int AppUpClientDaemonGNDCAdaptiveGP(
 		}
 		historyEvalComp += sumComp / historyComp.size();
 	}
+
 	// Determine grace period
 	float gracePeriod = round(APP_UP_GNDC_ADAPTIVE_GRACE_PERIOD
 			* log2(numChunksThisAId + 1)
