@@ -2908,13 +2908,16 @@ bool AppUpClientDaemonCheckStop(
 	}
 
 	if(completed) {
-		if(node->mobilityData->current->speed > 0) {
+		if(node->mobilityData->current->speed > 0 ) {
 			printf("\033[1;33m"
 					"UP client daemon: %s signaled completion before arrival\n",
 					node->hostname);
 		} else {
 			clientDaemonPtr->timeoutId += 1;
-			clientDaemonPtr->joinedAId = -1;
+			if(clientDaemonPtr->joinedAId > 0 &&
+					stopNext->lsAId->count(clientDaemonPtr->joinedAId) > 0) {
+				clientDaemonPtr->joinedAId = -1;
+			}
 
 			printf("\033[1;33m"
 					"UP client daemon: %s completed at (%.1f, %.1f, %.1f)\n"
