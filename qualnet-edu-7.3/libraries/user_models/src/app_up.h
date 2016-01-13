@@ -267,6 +267,7 @@ const int APP_UP_PATH_STOP_TIMEOUT_2 = APP_UP_OPEN_CONN_ATTEMPT_MAX * 3;
 const float APP_UP_GNDC_TIMELINE_GRACE_PERIOD = 60.0;
 const float APP_UP_GNDC_ADAPTIVE_GRACE_PERIOD = 10.0;
 const float APP_UP_GNDC_RATE_STEP = 50.0; // KB/s
+const int APP_UP_TERMINATION_WAIT_TIME = 60;
 
 int AppUpClientDaemonGNDCEverything(
 		Node *node,

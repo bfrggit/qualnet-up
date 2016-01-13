@@ -4,6 +4,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <math.h>
+#include <signal.h>
 #include <iostream>
 #include <fstream>
 
@@ -2268,6 +2269,9 @@ void AppLayerUpClientDaemon(Node *node, Message *msg) {
 					timeoutId);
 		}
 		break; }
+	case MSG_APP_UP_TerminationTimer: {
+		kill(getpid(), SIGINT);
+		break; }
 	default:
 		printf("UP client daemon: %s at time %s received "\
 			"message of unknown type %d\n",
@@ -2780,7 +2784,29 @@ void AppUpClientDaemonMobilityModelProcess(
 				clientDaemonPtr->initPos.cartesian.y,
 				clientDaemonPtr->initPos.cartesian.z);
 	}
-	if(clientDaemonPtr->path == NULL) return;
+	if(clientDaemonPtr->path == NULL) {
+		printf("\033[1;33m"
+				"UP client daemon: %s will terminate the simulator\n"
+				"\033[0m",
+				node->hostname);
+		Message* msg;
+		ActionData acnData;
+
+		msg = MESSAGE_Alloc(node,
+				APP_LAYER,
+				APP_UP_CLIENT_DAEMON,
+				MSG_APP_UP_TerminationTimer);
+//		MESSAGE_InfoAlloc(node, msg, sizeof(bool));
+
+		//Trace Information
+		acnData.actionType = SEND;
+		acnData.actionComment = NO_COMMENT;
+		TRACE_PrintTrace(node, msg, TRACE_APPLICATION_LAYER,
+				PACKET_OUT, &acnData);
+		MESSAGE_Send(node, msg,
+				(clocktype)APP_UP_TERMINATION_WAIT_TIME * SECOND);
+		return;
+	}
 
 	Coordinates crdsNext;
 	AppUpPathStop* stopNext = clientDaemonPtr->path;

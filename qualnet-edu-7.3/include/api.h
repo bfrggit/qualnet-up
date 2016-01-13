@@ -908,6 +908,7 @@ enum
 	MSG_APP_UP_TransportConnectionFailed,
 	MSG_APP_UP_PathTimer,
 	MSG_APP_UP_PathStopTimeout,
+	MSG_APP_UP_TerminationTimer,
 
     /*
      * Any other message types which have to be added should be added before
