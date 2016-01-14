@@ -24,6 +24,13 @@
 // Pseudo traffic sender layer
 #include "app_trafficSender.h"
 
+float AppUpObjectiveF(float delay) {
+	if(delay > 0) {
+		return exp(-delay / APP_UP_OBJECTIVE_F_HALFLIFE * log(2.0));
+	}
+	return 1.0;
+}
+
 void AppUpServerInit(
 	Node* node,
 	Address serverAddr) {
@@ -1321,6 +1328,10 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 				upClientDaemon->policy = APP_UP_ADAPTION_ADAPTIVE_GP;
 				upClientDaemon->getNextDataChunk =
 						AppUpClientDaemonGNDCAdaptiveGP;
+			} else if(strcmp(policyName, "CONTROL_TH") == 0) {
+				upClientDaemon->policy = APP_UP_ADAPTION_CONTROL_TH;
+				upClientDaemon->getNextDataChunk =
+						AppUpClientDaemonGNDCControlTh;
 			}
 		} else assert(false);
 		assert(upClientDaemon->policy >= 0);
@@ -2562,7 +2573,8 @@ int AppUpClientDaemonGNDCAdaptiveGP(
 		bool chunkMeetDeadline = false;
 		int chunkSize = -1;
 
-		for(AppUpClientDaemonDataChunkStr* chunkPtr = clientDaemonPtr->dataChunks;
+		for(AppUpClientDaemonDataChunkStr* chunkPtr =
+					clientDaemonPtr->dataChunks;
 				chunkPtr;
 				chunkPtr = chunkPtr->next) {
 			float estUpTime = (double)node->getNodeTime() / SECOND
@@ -2586,6 +2598,55 @@ int AppUpClientDaemonGNDCAdaptiveGP(
 					chunkSize = chunkPtr->size;
 				}
 			}
+		}
+	}
+	if(chunkId > 0) return chunkId;
+
+	// If this is last opportunity, upload everything
+	if(AppUpClientDaemonIsAtLastA(node, clientDaemonPtr))
+		chunkId = AppUpClientDaemonGNDCEverything(node, clientDaemonPtr);
+	return chunkId;
+}
+
+int AppUpClientDaemonGNDCControlTh(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr) {
+	int joinedAId = clientDaemonPtr->joinedAId;
+	int chunkId = -1;
+	float estCompTime = 0.0;
+	float currentTime = (double)node->getNodeTime() / SECOND;
+
+	if(joinedAId < 1) return chunkId; // -1
+	if(clientDaemonPtr->specs->count(joinedAId) > 0) {
+		estCompTime = clientDaemonPtr->specs->at(joinedAId)->estCompTime;
+	}
+
+	int queueSize = 0;
+
+	for(AppUpClientDaemonDataChunkStr* chunkPtr = clientDaemonPtr->dataChunks;
+			chunkPtr;
+			chunkPtr = chunkPtr->next) {
+		if(chunkPtr->dirty < 2)
+			++queueSize;
+	}
+
+	float chunkEval = 0.0;
+	float eval;
+
+	for(AppUpClientDaemonDataChunkStr* chunkPtr = clientDaemonPtr->dataChunks;
+			chunkPtr;
+			chunkPtr = chunkPtr->next) {
+		if(chunkPtr->dirty > 0) continue;
+		eval = APP_UP_CONTROL_THEORY_K1 * queueSize * chunkPtr->size
+				+ chunkPtr->priority * AppUpObjectiveF(currentTime
+					+ chunkPtr->size / clientDaemonPtr->currentRate
+					- chunkPtr->deadline)
+				- APP_UP_CONTROL_THEORY_K3 * (currentTime - estCompTime)
+					* chunkPtr->size / clientDaemonPtr->currentRate;
+		if(eval < 0) continue;
+		if(chunkId < 1 || eval > chunkEval) {
+			chunkId = chunkPtr->identifier;
+			chunkEval = eval;
 		}
 	}
 	if(chunkId > 0) return chunkId;

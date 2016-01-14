@@ -93,7 +93,8 @@ typedef enum enum_app_up_adaption_policy {
 	APP_UP_ADAPTION_OPPORTUNITY = APP_UP_ADAPTION_EVERYTHING,
 	APP_UP_ADAPTION_STRICT_PLAN,
 	APP_UP_ADAPTION_TIMELINE,
-	APP_UP_ADAPTION_ADAPTIVE_GP
+	APP_UP_ADAPTION_ADAPTIVE_GP,
+	APP_UP_ADAPTION_CONTROL_TH
 } AppUpAdaptionPolicy;
 
 typedef struct struct_app_up_path_stop {
@@ -138,6 +139,10 @@ typedef struct struct_app_up_client_daemon_str {
 typedef int (*AppUpClientDaemonGetNextDataChunkType)(
 		Node*,
 		AppDataUpClientDaemon*);
+
+float AppUpObjectiveF(float delay);
+
+const float APP_UP_OBJECTIVE_F_HALFLIFE = 30.0;
 
 void AppUpServerInit(
 	Node *node,
@@ -268,6 +273,8 @@ const float APP_UP_GNDC_TIMELINE_GRACE_PERIOD = 60.0;
 const float APP_UP_GNDC_ADAPTIVE_GRACE_PERIOD = 10.0;
 const float APP_UP_GNDC_RATE_STEP = 50.0; // KB/s
 const int APP_UP_TERMINATION_WAIT_TIME = 60;
+const float APP_UP_CONTROL_THEORY_K1 = 2e-6;
+const float APP_UP_CONTROL_THEORY_K3 = 1e-4;
 
 int AppUpClientDaemonGNDCEverything(
 		Node *node,
@@ -287,6 +294,10 @@ int AppUpClientDaemonGNDCAdaptiveGP(
 
 const AppUpClientDaemonGetNextDataChunkType
     AppUpClientDaemonGNDCOpportunity = AppUpClientDaemonGNDCEverything;
+
+int AppUpClientDaemonGNDCControlTh(
+		Node *node,
+		AppDataUpClientDaemon* clientDaemonPtr);
 
 void AppUpClientDaemonSendNextDataChunk(
 		Node* node,
