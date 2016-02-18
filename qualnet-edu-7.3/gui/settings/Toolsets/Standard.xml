@@ -43,7 +43,6 @@
         <subcategory name="VBR" icon="vbr_a.png" tooltip="Variable Bit Rate" categorytype="Applications" type="App" propertytype="VBR" />
         <subcategory name="VoIP" icon="voip_a.png" tooltip="Voice over IP" categorytype="Applications" type="App" propertytype="VOIP" />
         <subcategory name="ZIGBEEAPP" icon="zigbee_a.png" tooltip="Application for Zigbee GTS service" categorytype="Applications" type="App" propertytype="ZIGBEEAPP" />
-        <subcategory name="UP" icon="ftp_d.png" tooltip="Upload Planning" categorytype="Applications" type="App" propertytype="UP" />
     </category>
     <category name="Dynamic Address Applications">
         <subcategory name="CBR" icon="cbr_d.png" tooltip="Constant Bit Rate (Dynamic Address Mode)" categorytype="Dynamic Address Applications" type="App" propertytype="CBR-DYNAMICADDRESS" />
