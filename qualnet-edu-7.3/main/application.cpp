@@ -3327,7 +3327,7 @@ APP_InitializeApplications(
 						destString,
 						nodeTypeString);
 
-                // Check integraty before parsing parameters
+                // Check integrity before parsing parameters
 				switch (numValues) {
 					case 3: break;
 					default: {

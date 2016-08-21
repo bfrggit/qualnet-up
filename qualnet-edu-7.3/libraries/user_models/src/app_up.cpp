@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <iostream>
 #include <fstream>
+#include <random>
 
 #include "api.h"
 #include "app_util.h"
@@ -1551,6 +1552,12 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 //		upClientDaemon->dataChunks = NULL;
 		upClientDaemon->getNextDataChunk = AppUpClientDaemonGNDCEverything;
 
+		double halfRangePercent = 0.0;
+
+#ifdef APP_UP_DATA_HALF_RANGE_PERCENT
+		halfRangePercent = APP_UP_DATA_HALF_RANGE_PERCENT;
+		assert(halfRangePercent < 1.0);
+#endif
 		if(!dataFileFlag) { // Legacy data chunk specification
 			if(dataChunkId <= 0
 					|| dataChunkSize <= 0
@@ -1562,12 +1569,30 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 						node->hostname);
 //				upClientDaemon->dataChunks = NULL;
 			} else {
+				double dataChunkActSize = (double)dataChunkSize;
+				float dataChunkActPriority = dataChunkPriority;
+
 				upClientDaemon->dataChunks = (AppUpClientDaemonDataChunkStr*)
 						MEM_malloc(sizeof(AppUpClientDaemonDataChunkStr));
 				upClientDaemon->dataChunks->identifier = dataChunkId;
-				upClientDaemon->dataChunks->size = dataChunkSize;
+				if(halfRangePercent > 1e-4) {
+					dataChunkActSize = dataChunkActSize * (1 + 
+							distUniData(randomEngine)
+						);
+					upClientDaemon->dataChunks->size = (int)dataChunkActSize;
+					if(distUniData(randomEngine) < halfRangePercent) {
+						if(dataChunkActPriority < 0.5) {
+							dataChunkActPriority = 0.6;
+						} else if(dataChunkActPriority < 0.8) {
+							dataChunkActPriority = 1.0;
+						}
+					}
+					upClientDaemon->dataChunks->priority = dataChunkActPriority;
+				} else {
+					upClientDaemon->dataChunks->size = dataChunkSize;
+					upClientDaemon->dataChunks->priority = dataChunkPriority;
+				}
 				upClientDaemon->dataChunks->deadline = dataChunkDeadline;
-				upClientDaemon->dataChunks->priority = dataChunkPriority;
 				upClientDaemon->dataChunks->dirty = 0;
 				upClientDaemon->dataChunks->next = NULL;
 			}
@@ -1600,15 +1625,35 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 							node->hostname);
 				} else {
 					AppUpClientDaemonDataChunkStr* lastChunkPtr;
-
+					double dataChunkActSize = (double)dataChunkSize;
+					float dataChunkActPriority = dataChunkPriority;
+					
 					lastChunkPtr = upClientDaemon->dataChunks;
 					upClientDaemon->dataChunks =
 							(AppUpClientDaemonDataChunkStr*)
 							MEM_malloc(sizeof(AppUpClientDaemonDataChunkStr));
 					upClientDaemon->dataChunks->identifier = dataChunkId;
-					upClientDaemon->dataChunks->size = dataChunkSize;
+					if(halfRangePercent > 1e-4) {
+						dataChunkActSize = dataChunkActSize * (1 + 
+								distUniData(randomEngine)
+							);
+						upClientDaemon->dataChunks->size =
+								(int)dataChunkActSize;
+						if(distUniData(randomEngine) < halfRangePercent) {
+							if(dataChunkActPriority < 0.5) {
+								dataChunkActPriority = 0.6;
+							} else if(dataChunkActPriority < 0.8) {
+								dataChunkActPriority = 1.0;
+							}
+						}
+						upClientDaemon->dataChunks->priority = 
+								dataChunkActPriority;
+					} else {
+						upClientDaemon->dataChunks->size = dataChunkSize;
+						upClientDaemon->dataChunks->priority = 
+								dataChunkPriority;
+					}
 					upClientDaemon->dataChunks->deadline = dataChunkDeadline;
-					upClientDaemon->dataChunks->priority = dataChunkPriority;
 					upClientDaemon->dataChunks->dirty = 0;
 					upClientDaemon->dataChunks->next = lastChunkPtr;
 				}
@@ -2935,8 +2980,25 @@ void AppUpClientDaemonMobilityModelProcess(
 		double sinAng = (crdsStop.cartesian.y - crds.cartesian.y) / distance;
 		clocktype timeNext;
 
-		if(node->mobilityData->current->speed == 0) {
-			speed = distance / stopNext->t;
+		if(node->mobilityData->current->speed == 0) { /* Just started */
+			double tMoveCoef = 0.0;
+			double tMoveAct = stopNext->t;
+
+#ifdef APP_UP_PATH_T_MOVE_COEF
+			tMoveCoef = APP_UP_PATH_T_MOVE_COEF;
+			assert(tMoveCoef < 1.0);
+#endif
+			// Check if dynamic moving coefficient is enabled
+			if(tMoveCoef > 1e-4) {
+				tMoveAct = tMoveAct * (
+						1 - tMoveCoef + distExpMove(randomEngine)
+					);
+				if(tMoveAct < 0) {
+					tMoveAct = 0.0;
+				}
+			}
+
+			speed = distance / tMoveAct;
 			printf("UP client daemon: %s started to move at speed %.1f\n",
 					node->hostname,
 					speed);
@@ -2945,7 +3007,7 @@ void AppUpClientDaemonMobilityModelProcess(
 					crdsStop.cartesian.x,
 					crdsStop.cartesian.y,
 					crdsStop.cartesian.z);
-		} else {
+		} else { /* Keep moving */
 			speed = node->mobilityData->current->speed;
 		}
 		if(distance > APP_UP_PATH_SIMU_DISTANCE + APP_UP_PATH_TOL) {
