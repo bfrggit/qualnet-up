@@ -354,12 +354,6 @@ bool AppUpClientDaemonIsAtLastA(Node* node,
 // Dynamic data half range, must be greater than 1e-4 and less than 1
 #define APP_UP_DATA_HALF_RANGE_PERCENT (0.5)
 
-const std::default_random_engine randomEngine;
-const std::exponential_distribution<double> distExpMove(
-		APP_UP_PATH_T_MOVE_COEF);
-const std::uniform_real_distribution<double> distUniData(
-		-APP_UP_DATA_HALF_RANGE_PERCENT, APP_UP_DATA_HALF_RANGE_PERCENT);
-
 double AppUpRand(const int& rand_mod);
 double AppUpUniDist(const double& l, const double& r, double x);
 double AppUpExpDist(const double& lambda, double x);
