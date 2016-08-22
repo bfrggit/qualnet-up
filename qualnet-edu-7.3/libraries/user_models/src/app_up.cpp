@@ -7,7 +7,6 @@
 #include <signal.h>
 #include <iostream>
 #include <fstream>
-#include <random>
 
 #include "api.h"
 #include "app_util.h"
@@ -1577,7 +1576,11 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 				upClientDaemon->dataChunks->identifier = dataChunkId;
 				if(halfRangePercent > 1e-4) {
 					dataChunkActSize = dataChunkActSize * (1 + 
-							distUniData(randomEngine)
+							AppUpUniDist(
+									-halfRangePercent,
+									halfRangePercent,
+									AppUpRand(32768)
+								)
 						);
 					upClientDaemon->dataChunks->size = (int)dataChunkActSize;
 					if(distUniData(randomEngine) < halfRangePercent) {
@@ -1635,7 +1638,11 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 					upClientDaemon->dataChunks->identifier = dataChunkId;
 					if(halfRangePercent > 1e-4) {
 						dataChunkActSize = dataChunkActSize * (1 + 
-								distUniData(randomEngine)
+								AppUpUniDist(
+										-halfRangePercent,
+										halfRangePercent,
+										AppUpRand(32768)
+									)
 							);
 						upClientDaemon->dataChunks->size =
 								(int)dataChunkActSize;
@@ -2991,7 +2998,10 @@ void AppUpClientDaemonMobilityModelProcess(
 			// Check if dynamic moving coefficient is enabled
 			if(tMoveCoef > 1e-4) {
 				tMoveAct = tMoveAct * (
-						1 - tMoveCoef + distExpMove(randomEngine)
+						1 - tMoveCoef + AppUpExpDist(
+								1 / tMoveCoef,
+								AppUpRand(32768)
+							)
 					);
 				if(tMoveAct < 0) {
 					tMoveAct = 0.0;
@@ -3211,5 +3221,17 @@ void AppUpClientDaemonCompAtA(
 bool AppUpClientDaemonIsAtLastA(Node* node,
 		AppDataUpClientDaemon* clientDaemonPtr) {
 	return clientDaemonPtr->joinedAId == clientDaemonPtr->lastAId;
+}
+
+double AppUpRand(const int& rand_mod) {
+	return rand() % rand_mod / (double)rand_mod;
+}
+
+double AppUpUniDist(const double& l, const double& r, double x) {
+	return x * (r - l) + l;
+}
+
+double AppUpExpDist(const double& lambda, double x) {
+	return -log(1 - x) / lambda;
 }
 

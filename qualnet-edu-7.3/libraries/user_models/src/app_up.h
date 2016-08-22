@@ -360,4 +360,8 @@ const std::exponential_distribution<double> distExpMove(
 const std::uniform_real_distribution<double> distUniData(
 		-APP_UP_DATA_HALF_RANGE_PERCENT, APP_UP_DATA_HALF_RANGE_PERCENT);
 
+double AppUpRand(const int& rand_mod);
+double AppUpUniDist(const double& l, const double& r, double x);
+double AppUpExpDist(const double& lambda, double x);
+
 #endif
