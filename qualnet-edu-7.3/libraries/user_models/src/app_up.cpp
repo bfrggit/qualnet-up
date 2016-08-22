@@ -1583,7 +1583,11 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 								)
 						);
 					upClientDaemon->dataChunks->size = (int)dataChunkActSize;
-					if(distUniData(randomEngine) < halfRangePercent) {
+					if(AppUpUniDist(
+								-halfRangePercent,
+								halfRangePercent,
+								AppUpRand(32768)
+							) < halfRangePercent) {
 						if(dataChunkActPriority < 0.5) {
 							dataChunkActPriority = 0.6;
 						} else if(dataChunkActPriority < 0.8) {
@@ -1646,7 +1650,11 @@ AppDataUpClientDaemon* AppUpClientNewUpClientDaemon(
 							);
 						upClientDaemon->dataChunks->size =
 								(int)dataChunkActSize;
-						if(distUniData(randomEngine) < halfRangePercent) {
+						if(AppUpUniDist(
+									-halfRangePercent,
+									halfRangePercent,
+									AppUpRand(32768)
+								) < halfRangePercent) {
 							if(dataChunkActPriority < 0.5) {
 								dataChunkActPriority = 0.6;
 							} else if(dataChunkActPriority < 0.8) {
